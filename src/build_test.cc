@@ -465,6 +465,7 @@ struct FakeStatus : public Status {
   virtual void BuildStarted() {}
   virtual void BuildFinished() {}
 
+  virtual void Debug(const char* msg, ...) {}
   virtual void Info(const char* msg, ...) {}
   virtual void Error(const char* msg, ...) {}
 

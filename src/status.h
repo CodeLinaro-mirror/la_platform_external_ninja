@@ -35,6 +35,7 @@ struct Status {
   virtual void BuildStarted() = 0;
   virtual void BuildFinished() = 0;
 
+  virtual void Debug(const char* msg, ...) = 0;
   virtual void Info(const char* msg, ...) = 0;
   virtual void Warning(const char* msg, ...) = 0;
   virtual void Error(const char* msg, ...) = 0;
@@ -53,6 +54,7 @@ struct StatusPrinter : Status {
   virtual void BuildStarted();
   virtual void BuildFinished();
 
+  virtual void Debug(const char* msg, ...);
   virtual void Info(const char* msg, ...);
   virtual void Warning(const char* msg, ...);
   virtual void Error(const char* msg, ...);
@@ -134,6 +136,7 @@ struct StatusSerializer : Status {
   virtual void BuildStarted();
   virtual void BuildFinished();
 
+  virtual void Debug(const char* msg, ...);
   virtual void Info(const char* msg, ...);
   virtual void Warning(const char* msg, ...);
   virtual void Error(const char* msg, ...);

@@ -377,6 +377,7 @@ struct Status {
       INFO = 0,
       WARNING = 1,
       ERROR = 2,
+      DEBUG = 3,
     };
 
     ::ninja::Status::Message::Level level_;

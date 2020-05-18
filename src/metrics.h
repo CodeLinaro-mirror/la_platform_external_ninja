@@ -23,6 +23,8 @@ using namespace std;
 
 #include "util.h"  // For int64_t.
 
+struct Status;
+
 /// The Metrics module is used for the debug mode that dumps timing stats of
 /// various actions.  To use, see METRIC_RECORD below.
 
@@ -101,7 +103,7 @@ struct Metrics {
   Metric* NewMetric(const string& name);
 
   /// Print a summary report to stdout.
-  void Report();
+  void Report(Status *status);
 
 private:
   std::mutex mutex_;
@@ -139,6 +141,6 @@ struct Stopwatch {
 
 extern Metrics* g_metrics;
 
-void DumpMemoryUsage();
+void DumpMemoryUsage(Status *status);
 
 #endif // NINJA_METRICS_H_

@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "status.h"
 #include "util.h"
 
 Metrics* g_metrics = NULL;
@@ -94,7 +95,7 @@ Metric* Metrics::NewMetric(const string& name) {
   return result;
 }
 
-void Metrics::Report() {
+void Metrics::Report(Status *status) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   int width = 0;
@@ -103,14 +104,14 @@ void Metrics::Report() {
     width = max((int)(*i)->name().size(), width);
   }
 
-  printf("%-*s\t%-6s\t%-9s\t%s\n", width,
+  status->Debug("%-*s\t%-6s\t%-9s\t%s", width,
          "metric", "count", "avg (us)", "total (ms)");
   for (vector<Metric*>::iterator i = metrics_.begin();
        i != metrics_.end(); ++i) {
     Metric* metric = *i;
     double total = metric->time() / (double)1000;
     double avg = metric->time() / (double)metric->count();
-    printf("%-*s\t%-6d\t%-8.1f\t%.1f\n", width, metric->name().c_str(),
+    status->Debug("%-*s\t%-6d\t%-8.1f\t%.1f", width, metric->name().c_str(),
            metric->count(), avg, total);
   }
 }
@@ -123,7 +124,7 @@ int64_t GetTimeMillis() {
   return TimerToMicros(HighResTimer()) / 1000;
 }
 
-void DumpMemoryUsage() {
+void DumpMemoryUsage(Status *status) {
 #if defined(__linux__)
   std::vector<std::string> words;
   struct rusage usage {};
@@ -148,13 +149,14 @@ void DumpMemoryUsage() {
     fclose(status_fp);
   }
   if (!words.empty()) {
+    string final;
     for (size_t i = 0; i < words.size(); ++i) {
       if (i > 0) {
-        printf(", ");
+        final += ", ";
       }
-      printf("%s", words[i].c_str());
+      final += words[i];
     }
-    printf("\n");
+    status->Debug("%s", final.c_str());
   }
 #endif
 }

@@ -238,6 +238,13 @@ void StatusPrinter::Info(const char* msg, ...) {
   va_end(ap);
 }
 
+void StatusPrinter::Debug(const char* msg, ...) {
+  va_list ap;
+  va_start(ap, msg);
+  ::Info(msg, ap);
+  va_end(ap);
+}
+
 #ifndef _WIN32
 
 #include "frontend.pb.h"
@@ -382,6 +389,13 @@ void StatusSerializer::Message(ninja::Status::Message::Level level,
   message->set_message(buf);
 
   Send();
+}
+
+void StatusSerializer::Debug(const char* msg, ...) {
+  va_list ap;
+  va_start(ap, msg);
+  Message(ninja::Status::Message::DEBUG, msg, ap);
+  va_end(ap);
 }
 
 void StatusSerializer::Info(const char* msg, ...) {

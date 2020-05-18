@@ -161,7 +161,7 @@ struct NinjaMain : public BuildLogUser {
   int RunBuild(int argc, char** argv, Status* status);
 
   /// Dump the output requested by '-d stats'.
-  void DumpMetrics();
+  void DumpMetrics(Status *status);
 
   virtual bool IsPathDead(StringPiece s) const {
     Node* n = state_.LookupNode(s);
@@ -1259,15 +1259,16 @@ bool NinjaMain::OpenDepsLog(bool recompact_only) {
   return true;
 }
 
-void NinjaMain::DumpMetrics() {
-  g_metrics->Report();
+void NinjaMain::DumpMetrics(Status *status) {
+  g_metrics->Report(status);
 
-  printf("\n");
+  status->Debug("");
+
   int count = (int)state_.paths_.size();
   int buckets = (int)state_.paths_.bucket_count();
-  printf("path->node hash load %.2f (%d entries / %d buckets), %zu edges\n",
+  status->Debug("path->node hash load %.2f (%d entries / %d buckets), %zu edges",
          count / (double) buckets, count, buckets, state_.edges_.size());
-  DumpMemoryUsage();
+  DumpMemoryUsage(status);
 }
 
 bool NinjaMain::EnsureBuildDirExists() {
@@ -1584,7 +1585,7 @@ NORETURN void real_main(int argc, char** argv) {
     } while (options.persistent);
 
     if (g_metrics)
-      ninja.DumpMetrics();
+      ninja.DumpMetrics(status);
 
     delete status;
     exit(result);
