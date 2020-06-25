@@ -255,7 +255,7 @@ bool ChunkParser::ParseRule() {
 bool ChunkParser::ParseEdge() {
   Edge* edge = new Edge();
 
-  auto parse_path_list = [this, edge](bool is_output, int& count) -> bool {
+  auto parse_path_list = [this, edge](Edge::DeferredPathList::Type type, int& count) -> bool {
     const char* start_pos = lexer_.GetPos();
     while (true) {
       LexedPath path;
@@ -268,7 +268,7 @@ bool ChunkParser::ParseEdge() {
         // (wasting memory), store just enough information to parse the path
         // lists again once bindings are ready.
         edge->parse_state_.deferred_path_lists.push_back({
-          start_pos, is_output, count,
+          start_pos, type, count,
         });
         return true;
       }
@@ -276,12 +276,14 @@ bool ChunkParser::ParseEdge() {
     }
   };
 
-  if (!parse_path_list(true, edge->explicit_outs_))
+  if (!parse_path_list(Edge::DeferredPathList::OUTPUT,
+      edge->explicit_outs_))
     return false;
 
   // Add all implicit outs, counting how many as we go.
   if (lexer_.PeekToken(Lexer::PIPE)) {
-    if (!parse_path_list(true, edge->implicit_outs_))
+    if (!parse_path_list(Edge::DeferredPathList::OUTPUT,
+        edge->implicit_outs_))
       return false;
   }
 
@@ -297,20 +299,31 @@ bool ChunkParser::ParseEdge() {
   edge->parse_state_.rule_name = rule_name;
   edge->parse_state_.rule_name_diag_pos = lexer_.GetLastTokenOffset();
 
-  if (!parse_path_list(false, edge->explicit_deps_))
+  if (!parse_path_list(Edge::DeferredPathList::INPUT,
+      edge->explicit_deps_))
     return false;
 
   // Add all implicit deps, counting how many as we go.
   if (lexer_.PeekToken(Lexer::PIPE)) {
-    if (!parse_path_list(false, edge->implicit_deps_))
+    if (!parse_path_list(Edge::DeferredPathList::INPUT,
+        edge->implicit_deps_))
       return false;
   }
 
   // Add all order-only deps, counting how many as we go.
   if (lexer_.PeekToken(Lexer::PIPE2)) {
-    if (!parse_path_list(false, edge->order_only_deps_))
+    if (!parse_path_list(Edge::DeferredPathList::INPUT,
+        edge->order_only_deps_))
       return false;
   }
+
+  // Add all validation deps, counting how many as we go.
+  if (lexer_.PeekToken(Lexer::PIPEAT)) {
+    if (!parse_path_list(Edge::DeferredPathList::VALIDATION,
+        edge->validation_deps_))
+      return false;
+  }
+
 
   if (!ExpectToken(Lexer::NEWLINE))
     return false;

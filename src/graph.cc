@@ -14,6 +14,7 @@
 
 #include "graph.h"
 
+#include <deque>
 #include <assert.h>
 #include <stdio.h>
 
@@ -54,6 +55,7 @@ bool Node::LStat(DiskInterface* disk_interface, bool* is_dir, string* err) {
 }
 
 bool DependencyScan::RecomputeNodesDirty(const std::vector<Node*>& initial_nodes,
+                                         std::vector<Node*>* validation_nodes,
                                          std::string* err) {
   METRIC_RECORD("dep scan");
   std::vector<Node*> all_nodes;
@@ -70,14 +72,31 @@ bool DependencyScan::RecomputeNodesDirty(const std::vector<Node*>& initial_nodes
   if (!PrecomputeNodesDirty(all_nodes, all_edges, thread_pool.get(), err))
     success = false;
 
+
+  std::deque<Node*> nodes(initial_nodes.begin(), initial_nodes.end());
+
   if (success) {
     METRIC_RECORD("dep scan : main pass");
-    vector<Node*> stack;
-    for (Node* node : initial_nodes) {
+    std::vector<Node*> stack;
+    std::vector<Node*> new_validation_nodes;
+    while (!nodes.empty()) {
+      Node* node = nodes.front();
+      nodes.pop_front();
+
       stack.clear();
-      if (!RecomputeNodeDirty(node, &stack, err)) {
+      new_validation_nodes.clear();
+      if (!RecomputeNodeDirty(node, &stack, &new_validation_nodes, err)) {
         success = false;
         break;
+      }
+      nodes.insert(nodes.end(), new_validation_nodes.begin(),
+                                new_validation_nodes.end());
+      if (!new_validation_nodes.empty()) {
+        assert(validation_nodes &&
+               "validations require RecomputeDirty to be called with validation_nodes");
+        validation_nodes->insert(validation_nodes->end(),
+                                 new_validation_nodes.begin(),
+                                 new_validation_nodes.end());
       }
     }
   }
@@ -106,12 +125,23 @@ void DependencyScan::CollectPrecomputeLists(Node* node,
   if (edge && !edge->precomputed_dirtiness_) {
     edge->precomputed_dirtiness_ = true;
     edges->push_back(edge);
+
     for (Node* node : edge->inputs_) {
       // Duplicate the dirtiness check here to avoid an unnecessary function
       // call. (The precomputed_dirtiness() will be inlined, but the recursive
       // call can't be.)
       if (!node->precomputed_dirtiness())
         CollectPrecomputeLists(node, nodes, edges);
+    }
+
+    if (!edge->validations_.empty()) {
+      for (Node* node : edge->validations_) {
+        // Duplicate the dirtiness check here to avoid an unnecessary function
+        // call. (The precomputed_dirtiness() will be inlined, but the recursive
+        // call can't be.)
+        if (!node->precomputed_dirtiness())
+          CollectPrecomputeLists(node, nodes, edges);
+      }
     }
   }
 
@@ -172,6 +202,7 @@ bool DependencyScan::PrecomputeNodesDirty(const std::vector<Node*>& nodes,
 }
 
 bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
+                                        std::vector<Node*>* validation_nodes,
                                         std::string* err) {
   Edge* edge = node->in_edge();
   if (!edge) {
@@ -230,12 +261,20 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
     }
   }
 
+  // Store any validation nodes from the edge for adding to the initial
+  // nodes.  Don't recurse into them, that would trigger the dependency
+  // cycle detector if the validation node depends on this node.
+  // RecomputeNodesDirty will add the validation nodes to the initial nodes
+  // and recurse into them.
+  validation_nodes->insert(validation_nodes->end(),
+      edge->validations_.begin(), edge->validations_.end());
+
   // Visit all inputs; we're dirty if any of the inputs are dirty.
   Node* most_recent_input = NULL;
   for (vector<Node*>::iterator i = edge->inputs_.begin();
        i != edge->inputs_.end(); ++i) {
     // Visit this input.
-    if (!RecomputeNodeDirty(*i, stack, err))
+    if (!RecomputeNodeDirty(*i, stack, validation_nodes, err))
       return false;
 
     // If an input is not ready, neither are our outputs.
@@ -633,6 +672,13 @@ void Edge::Dump(const char* prefix) const {
        i != outputs_.end() && *i != NULL; ++i) {
     printf("%s ", (*i)->path().c_str());
   }
+  if (!validations_.empty()) {
+    printf(" validations ");
+    for (vector<Node*>::const_iterator i = validations_.begin();
+         i != validations_.end() && *i != NULL; ++i) {
+      printf("%s ", (*i)->path().c_str());
+    }
+  }
   if (pool_) {
     if (!pool_->name().empty()) {
       printf("(in pool '%s')", pool_->name().c_str());
@@ -718,12 +764,32 @@ std::vector<Edge*> Node::GetOutEdges() const {
   return result;
 }
 
+std::vector<Edge*> Node::GetValidationOutEdges() const {
+  std::vector<Edge*> result;
+  for (EdgeList* node = validation_out_edges_.load(); node != nullptr; node = node->next) {
+    result.push_back(node->edge);
+  }
+  std::sort(result.begin(), result.end(), EdgeCmp());
+
+  return result;
+}
+
 void Node::AddOutEdge(Edge* edge) {
   EdgeList* new_node = new EdgeList { edge };
   while (true) {
     EdgeList* cur_head = out_edges_.load();
     new_node->next = cur_head;
     if (out_edges_.compare_exchange_weak(cur_head, new_node))
+      break;
+  }
+}
+
+void Node::AddValidationOutEdge(Edge* edge) {
+  EdgeList* new_node = new EdgeList { edge };
+  while (true) {
+    EdgeList* cur_head = validation_out_edges_.load();
+    new_node->next = cur_head;
+    if (validation_out_edges_.compare_exchange_weak(cur_head, new_node))
       break;
   }
 }
@@ -743,6 +809,14 @@ void Node::Dump(const char* prefix) const {
   for (vector<Edge*>::const_iterator e = out_edges.begin();
        e != out_edges.end() && *e != NULL; ++e) {
     (*e)->Dump(" +- ");
+  }
+  const std::vector<Edge*> validation_out_edges = GetValidationOutEdges();
+  if (!validation_out_edges.empty()) {
+    printf(" validation out edges:\n");
+    for (vector<Edge*>::const_iterator e = validation_out_edges.begin();
+         e != validation_out_edges.end() && *e != NULL; ++e) {
+      (*e)->Dump(" +- ");
+    }
   }
 }
 

@@ -352,6 +352,7 @@ bool ManifestLoader::AddEdgeToGraph(Edge* edge, const LoadedFile& file,
   edge->outputs_.reserve(edge->explicit_outs_ + edge->implicit_outs_);
   edge->inputs_.reserve(edge->explicit_deps_ + edge->implicit_deps_ +
                         edge->order_only_deps_);
+  edge->validations_.reserve(edge->validation_deps_);
 
   // Add the input and output nodes. We already lexed them in the first pass,
   // but we couldn't add them because scope bindings weren't available. To save
@@ -360,8 +361,10 @@ bool ManifestLoader::AddEdgeToGraph(Edge* edge, const LoadedFile& file,
   Lexer lexer(file.filename(), file.content(), file.content().data());
   for (const Edge::DeferredPathList& path_list :
       edge->parse_state_.deferred_path_lists) {
-    std::vector<Node*>* vec = path_list.is_output ?
-        &edge->outputs_ : &edge->inputs_;
+    std::vector<Node*>* vec =
+        path_list.type == Edge::DeferredPathList::INPUT ? &edge->inputs_ :
+        path_list.type == Edge::DeferredPathList::OUTPUT ? &edge->outputs_ :
+        &edge->validations_;
     lexer.ResetPos(path_list.lexer_pos);
     for (int i = 0; i < path_list.count; ++i) {
       if (!AddPathToEdge(state_, *edge, vec, file, lexer, err))
@@ -515,6 +518,9 @@ bool ManifestLoader::FinishLoading(const std::vector<Clump*>& clumps,
       for (Edge* edge : clump->edges_) {
         for (Node* input : edge->inputs_) {
           input->AddOutEdge(edge);
+        }
+        for (Node* validation : edge->validations_) {
+          validation->AddValidationOutEdge(edge);
         }
       }
     });

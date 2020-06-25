@@ -411,10 +411,24 @@ Node* Builder::AddTarget(const string& name, string* err) {
 }
 
 bool Builder::AddTargets(const std::vector<Node*> &nodes, string* err) {
-  if (!scan_.RecomputeNodesDirty(nodes, err))
+  std::vector<Node*> validation_nodes;
+  if (!scan_.RecomputeNodesDirty(nodes, &validation_nodes, err))
     return false;
 
   for (Node* node : nodes) {
+    std::string plan_err;
+    if (!plan_.AddTarget(node, &plan_err)) {
+      if (!plan_err.empty()) {
+        *err = plan_err;
+        return false;
+      } else {
+        // Added a target that is already up-to-date; not really
+        // an error.
+      }
+    }
+  }
+
+  for (Node* node : validation_nodes) {
     std::string plan_err;
     if (!plan_.AddTarget(node, &plan_err)) {
       if (!plan_err.empty()) {

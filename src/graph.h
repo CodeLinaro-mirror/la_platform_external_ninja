@@ -187,7 +187,9 @@ struct Node {
   // Thread-safe properties.
   bool has_out_edge() const;
   std::vector<Edge*> GetOutEdges() const;
+  std::vector<Edge*> GetValidationOutEdges() const;
   void AddOutEdge(Edge* edge);
+  void AddValidationOutEdge(Edge* edge);
 
   /// Add an out-edge from the dependency scan. This function differs from
   /// AddOutEdge in several ways:
@@ -245,6 +247,7 @@ private:
   /// All Edges that use this Node as an input. The order of this list is
   /// non-deterministic. An accessor function sorts it each time it's used.
   std::atomic<EdgeList*> out_edges_ { nullptr };
+  std::atomic<EdgeList*> validation_out_edges_ { nullptr };
 
   std::vector<Edge*> dep_scan_out_edges_;
 
@@ -360,12 +363,18 @@ public:
 
   /// Temporary fields used only during manifest parsing.
   struct DeferredPathList {
-    DeferredPathList(const char* lexer_pos=nullptr, bool is_output=false,
-                     int count=0)
-        : lexer_pos(lexer_pos), is_output(is_output), count(count) {}
+    enum Type {
+      INPUT = 0,
+      OUTPUT = 1,
+      VALIDATION = 2,
+    };
+
+    DeferredPathList(const char* lexer_pos=nullptr,
+        Type type = INPUT, int count=0)
+        : lexer_pos(lexer_pos), type(type), count(count) {}
 
     const char* lexer_pos = nullptr;
-    bool is_output = false;
+    Type type;
     int count = 0;
   };
   struct {
@@ -380,6 +389,7 @@ public:
   Pool* pool_ = nullptr;
   vector<Node*> inputs_;
   vector<Node*> outputs_;
+  vector<Node*> validations_;
   std::vector<std::pair<HashedStr, std::string>> unevaled_bindings_;
   VisitMark mark_ = VisitNone;
   bool precomputed_dirtiness_ = false;
@@ -424,6 +434,8 @@ public:
   bool is_implicit_out(size_t index) const {
     return index >= outputs_.size() - implicit_outs_;
   }
+
+  int validation_deps_ = 0;
 
   bool is_phony() const;
   bool use_console() const;
@@ -495,16 +507,22 @@ struct DependencyScan {
         missing_phony_is_err_(missing_phony_is_err) {}
 
   /// Used for tests.
-  bool RecomputeDirty(Node* node, std::string* err) {
-    return RecomputeNodesDirty({ node }, err);
+  bool RecomputeDirty(Node* node, std::vector<Node*>* validation_nodes,
+      std::string* err) {
+    std::vector<Node*> nodes = {node};
+    return RecomputeNodesDirty(nodes, validation_nodes, err);
   }
 
-  /// Update the |dirty_| state of the given node by inspecting its input edge.
+  /// Update the |dirty_| state of the given nodes by transitively inspecting
+  /// their input edges.
   /// Examine inputs, outputs, and command lines to judge whether an edge
   /// needs to be re-run, and update outputs_ready_ and each outputs' |dirty_|
   /// state accordingly.
+  /// Appends any validation nodes found to the nodes parameter.
   /// Returns false on failure.
-  bool RecomputeNodesDirty(const std::vector<Node*>& nodes, std::string* err);
+  bool RecomputeNodesDirty(const std::vector<Node*>& initial_nodes,
+                           std::vector<Node*>* validation_nodes,
+                           std::string* err);
 
   /// Recompute whether any output of the edge is dirty, if so sets |*dirty|.
   /// Returns false on failure.
@@ -534,7 +552,9 @@ struct DependencyScan {
                             const std::vector<Edge*>& edges,
                             ThreadPool* thread_pool, std::string* err);
 
-  bool RecomputeNodeDirty(Node* node, vector<Node*>* stack, string* err);
+  bool RecomputeNodeDirty(Node* node, vector<Node*>* stack,
+                          vector<Node*>* validation_nodes, string* err);
+
   bool VerifyDAG(Node* node, vector<Node*>* stack, string* err);
 
   /// Recompute whether a given single output should be marked dirty.

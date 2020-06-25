@@ -2539,7 +2539,6 @@ TEST_F(BuildWithLogTest, OldOutputFileWarning) {
   EXPECT_EQ("", err);
   EXPECT_TRUE(builder_.Build(&err));
   EXPECT_EQ("", err);
-
   EXPECT_EQ("ninja: Missing `restat`? An output file is older than the most recent input:\n output: out\n  input: in", status_.last_output_);
 }
 
@@ -2708,4 +2707,182 @@ TEST_F(BuildTest, PreRemoveOutputsWithPhonyOutputs) {
   EXPECT_EQ(1u, command_runner_.commands_ran_.size());
   EXPECT_EQ(0u, fs_.files_created_.size());
   EXPECT_EQ(0u, fs_.files_removed_.size());
+}
+
+TEST_F(BuildTest, Validation) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+    "build out: cat in |@ validate\n"
+    "build validate: cat in2\n"));
+
+  fs_.Create("in", "");
+  fs_.Create("in2", "");
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("out", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+
+  EXPECT_EQ(2u, command_runner_.commands_ran_.size());
+
+  // Test touching "in" only rebuilds "out" ("validate" doesn't depend on
+  // "out").
+  fs_.Tick();
+  fs_.Create("in", "");
+
+  err.clear();
+  command_runner_.commands_ran_.clear();
+  state_.Reset();
+  EXPECT_TRUE(builder_.AddTarget("out", &err));
+  ASSERT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+
+  EXPECT_EQ(1u, command_runner_.commands_ran_.size());
+
+  // Test touching "in2" only rebuilds "validate" ("out" doesn't depend on
+  // "validate").
+  fs_.Tick();
+  fs_.Create("in2", "");
+
+  err.clear();
+  command_runner_.commands_ran_.clear();
+  state_.Reset();
+  EXPECT_TRUE(builder_.AddTarget("out", &err));
+  ASSERT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+
+  EXPECT_EQ(1u, command_runner_.commands_ran_.size());
+}
+
+TEST_F(BuildTest, ValidationDependsOnOutput) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+    "build out: cat in |@ validate\n"
+    "build validate: cat in2 | out\n"));
+
+  fs_.Create("in", "");
+  fs_.Create("in2", "");
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("out", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+
+  EXPECT_EQ(2u, command_runner_.commands_ran_.size());
+
+  // Test touching "in" rebuilds "out" and "validate".
+  fs_.Tick();
+  fs_.Create("in", "");
+
+  err.clear();
+  command_runner_.commands_ran_.clear();
+  state_.Reset();
+  EXPECT_TRUE(builder_.AddTarget("out", &err));
+  ASSERT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+
+  EXPECT_EQ(2u, command_runner_.commands_ran_.size());
+
+  // Test touching "in2" only rebuilds "validate" ("out" doesn't depend on
+  // "validate").
+  fs_.Tick();
+  fs_.Create("in2", "");
+
+  err.clear();
+  command_runner_.commands_ran_.clear();
+  state_.Reset();
+  EXPECT_TRUE(builder_.AddTarget("out", &err));
+  ASSERT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+
+  EXPECT_EQ(1u, command_runner_.commands_ran_.size());
+}
+
+TEST_F(BuildWithDepsLogTest, ValidationThroughDepfile) {
+  const char* manifest =
+      "build out: cat in |@ validate\n"
+      "build validate: cat in2 | out\n"
+      "build out2: cat in3\n"
+      "  deps = gcc\n"
+      "  depfile = out2.d\n";
+
+  string err;
+
+  {
+    fs_.Create("in", "");
+    fs_.Create("in2", "");
+    fs_.Create("in3", "");
+    fs_.Create("out2.d", "out: out");
+
+    State state;
+    ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
+    ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
+
+    DepsLog deps_log;
+    ASSERT_TRUE(deps_log.OpenForWrite("ninja_deps", fs_, &err));
+    ASSERT_EQ("", err);
+
+    Builder builder(&state, config_, NULL, &deps_log, &fs_, &status_, 0);
+    builder.command_runner_.reset(&command_runner_);
+
+    EXPECT_TRUE(builder.AddTarget("out2", &err));
+    ASSERT_EQ("", err);
+
+    EXPECT_TRUE(builder.Build(&err));
+    EXPECT_EQ("", err);
+
+    // On the first build, only the out2 command is run.
+    EXPECT_EQ(command_runner_.commands_ran_.size(), 1);
+
+    // The deps file should have been removed.
+    EXPECT_EQ(0, fs_.Stat("out2.d", &err));
+
+    deps_log.Close();
+    builder.command_runner_.release();
+  }
+
+  fs_.Tick();
+  command_runner_.commands_ran_.clear();
+
+  {
+    fs_.Create("in2", "");
+    fs_.Create("in3", "");
+
+    State state;
+    ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
+    ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
+
+    DepsLog deps_log;
+    ASSERT_TRUE(deps_log.Load("ninja_deps", &state, &err));
+    ASSERT_TRUE(deps_log.OpenForWrite("ninja_deps", fs_, &err));
+    ASSERT_EQ("", err);
+
+    Builder builder(&state, config_, NULL, &deps_log, &fs_, &status_, 0);
+    builder.command_runner_.reset(&command_runner_);
+
+    EXPECT_TRUE(builder.AddTarget("out2", &err));
+    ASSERT_EQ("", err);
+
+    EXPECT_TRUE(builder.Build(&err));
+    EXPECT_EQ("", err);
+
+    // The out and validate actions should have been run as well as out2.
+    ASSERT_EQ(command_runner_.commands_ran_.size(), 3);
+    EXPECT_EQ(command_runner_.commands_ran_[0], "cat in > out");
+    EXPECT_EQ(command_runner_.commands_ran_[1], "cat in2 > validate");
+    EXPECT_EQ(command_runner_.commands_ran_[2], "cat in3 > out2");
+
+    deps_log.Close();
+    builder.command_runner_.release();
+  }
 }
