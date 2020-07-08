@@ -359,7 +359,8 @@ Builder::Builder(State* state, const BuildConfig& config,
                  int64_t start_time_millis)
     : state_(state), config_(config), status_(status),
       start_time_millis_(start_time_millis), disk_interface_(disk_interface),
-      scan_(state, build_log, deps_log, disk_interface, config.uses_phony_outputs) {
+      scan_(state, build_log, deps_log, disk_interface,
+            &config_.depfile_parser_options, config.uses_phony_outputs) {
 }
 
 Builder::~Builder() {
@@ -802,7 +803,7 @@ bool Builder::ExtractDeps(CommandRunner::Result* result,
     if (content.empty())
       return true;
 
-    DepfileParser deps;
+    DepfileParser deps(config_.depfile_parser_options);
     if (!deps.Parse(&content, err))
       return false;
 

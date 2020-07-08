@@ -18,7 +18,7 @@
 #include "test.h"
 
 struct GraphTest : public StateTestWithBuiltinRules {
-  GraphTest() : scan_(&state_, NULL, NULL, &fs_, false) {}
+  GraphTest() : scan_(&state_, NULL, NULL, &fs_, NULL, false) {}
 
   VirtualFileSystem fs_;
   DependencyScan scan_;
@@ -510,7 +510,7 @@ TEST_F(GraphTest, MissingPhonyWithPhonyOutputs) {
   EXPECT_TRUE(GetNode("foo")->dirty());
 
   state_.Reset();
-  DependencyScan scan(&state_, NULL, NULL, &fs_, true);
+  DependencyScan scan(&state_, NULL, NULL, &fs_, NULL, true);
   EXPECT_FALSE(scan.RecomputeDirty(GetNode("foo"), NULL, &err));
   EXPECT_EQ("output foo of phony edge doesn't exist. Missing 'phony_output = true'?", err);
 }

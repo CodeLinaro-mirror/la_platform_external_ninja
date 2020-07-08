@@ -26,6 +26,7 @@
 #include <sys/resource.h>
 #endif
 
+#include "depfile_parser.h"
 #include "graph.h"  // XXX needed for DependencyScan; should rearrange.
 #include "exit_status.h"
 #include "util.h"  // int64_t
@@ -162,6 +163,7 @@ struct BuildConfig {
   /// The maximum load average we must not exceed. A negative value
   /// means that we do not have any limit.
   double max_load_average;
+  DepfileParserOptions depfile_parser_options;
 
   /// Command to execute to handle build output
   const char* frontend;

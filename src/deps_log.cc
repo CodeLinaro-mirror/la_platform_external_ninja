@@ -55,7 +55,7 @@ bool DepsLog::OpenForWrite(const string& path, const DiskInterface& disk, string
     if (!Recompact(path, disk, err))
       return false;
   }
-  
+
   file_ = fopen(path.c_str(), "ab");
   if (!file_) {
     *err = strerror(errno);
@@ -694,7 +694,7 @@ bool DepsLog::Recompact(const string& path, const DiskInterface& disk, string* e
   // will refer to the ordering in new_log, not in the current log.
   for (vector<Node*>::iterator i = nodes_.begin(); i != nodes_.end(); ++i)
     (*i)->set_id(-1);
-  
+
   // Write out all deps again.
   for (int old_id = 0; old_id < (int)deps_.size(); ++old_id) {
     Deps* deps = deps_[old_id];
