@@ -295,6 +295,7 @@ static inline bool AddPathToEdge(State* state, const Edge& edge,
 
 static const HashedStrView kPool { "pool" };
 static const HashedStrView kDeps { "deps" };
+static const HashedStrView kDyndep { "dyndep" };
 
 struct ManifestLoader {
 private:
@@ -408,6 +409,26 @@ bool ManifestLoader::AddEdgeToGraph(Edge* edge, const LoadedFile& file,
                          "multiple outputs aren't (yet?) supported by depslog; "
                          "bring this up on the mailing list if it affects you",
                          err);
+  }
+
+  // Lookup, validate, and save any dyndep binding.  It will be used later
+  // to load generated dependency information dynamically, but it must
+  // be one of our manifest-specified inputs.
+  std::string dyndep;
+  if (!edge->EvaluateVariable(&dyndep, kDyndep, err, EdgeEval::kParseTime))
+    return false;
+  if (!dyndep.empty()) {
+    uint64_t slash_bits;
+    if (!CanonicalizePath(&dyndep, &slash_bits, err))
+      return false;
+    edge->dyndep_ = state_->GetNode(dyndep, 0);
+    edge->dyndep_->set_dyndep_pending(true);
+    vector<Node*>::iterator dgi =
+      std::find(edge->inputs_.begin(), edge->inputs_.end(), edge->dyndep_);
+    if (dgi == edge->inputs_.end()) {
+      return DecorateError(file, edge->parse_state_.final_diag_pos,
+                           "dyndep '" + dyndep + "' is not an input", err);
+    }
   }
 
   return true;

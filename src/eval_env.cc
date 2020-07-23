@@ -32,6 +32,7 @@ bool Rule::IsReservedBinding(StringPiece var) {
 
   return var == "command" ||
       var == "depfile" ||
+      var == "dyndep" ||
       var == "description" ||
       var == "deps" ||
       var == "generator" ||

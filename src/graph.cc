@@ -245,6 +245,31 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
       return false;
     }
   } else {
+    if (!edge->deps_loaded_) {
+      // This is our first encounter with this edge.
+      // If there is a pending dyndep file, visit it now:
+      // * If the dyndep file is ready then load it now to get any
+      //   additional inputs and outputs for this and other edges.
+      //   Once the dyndep file is loaded it will no longer be pending
+      //   if any other edges encounter it, but they will already have
+      //   been updated.
+      // * If the dyndep file is not ready then since is known to be an
+      //   input to this edge, the edge will not be considered ready below.
+      //   Later during the build the dyndep file will become ready and be
+      //   loaded to update this edge before it can possibly be scheduled.
+      if (edge->dyndep_ && edge->dyndep_->dyndep_pending()) {
+        if (!RecomputeDirty(edge->dyndep_, stack, err))
+          return false;
+
+        if (!edge->dyndep_->in_edge() ||
+            edge->dyndep_->in_edge()->outputs_ready()) {
+          // The dyndep file is ready, so load it now.
+          if (!LoadDyndeps(edge->dyndep_, err))
+            return false;
+        }
+      }
+    }
+
     // Load output mtimes so we can compare them to the most recent input below.
     for (vector<Node*>::iterator o = edge->outputs_.begin();
          o != edge->outputs_.end(); ++o) {
@@ -252,12 +277,16 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
         return false;
     }
 
-    if (!dep_loader_.LoadDeps(edge, err)) {
-      if (!err->empty())
-        return false;
-      // Failed to load dependency info: rebuild to regenerate it.
-      // LoadDeps() did EXPLAIN() already, no need to do it here.
-      dirty = edge->deps_missing_ = true;
+    if (!edge->deps_loaded_) {
+      // This is our first encounter with this edge.  Load discovered deps.
+      edge->deps_loaded_ = true;
+      if (!dep_loader_.LoadDeps(edge, err)) {
+        if (!err->empty())
+          return false;
+        // Failed to load dependency info: rebuild to regenerate it.
+        // LoadDeps() did EXPLAIN() already, no need to do it here.
+        dirty = edge->deps_missing_ = true;
+      }
     }
   }
 
@@ -476,6 +505,15 @@ bool DependencyScan::RecomputeOutputDirty(Edge* edge,
   return false;
 }
 
+bool DependencyScan::LoadDyndeps(Node* node, string* err) const {
+  return dyndep_loader_.LoadDyndeps(node, err);
+}
+
+bool DependencyScan::LoadDyndeps(Node* node, DyndepFile* ddf,
+                                 string* err) const {
+  return dyndep_loader_.LoadDyndeps(node, ddf, err);
+}
+
 bool Edge::AllInputsReady() const {
   for (vector<Node*>::const_iterator i = inputs_.begin();
        i != inputs_.end(); ++i) {
@@ -562,6 +600,7 @@ void EdgeEval::AppendPathList(std::string* out_append,
 
 static const HashedStrView kCommand         { "command" };
 static const HashedStrView kDepfile         { "depfile" };
+static const HashedStrView kDyndep          { "dyndep" };
 static const HashedStrView kRspfile         { "rspfile" };
 static const HashedStrView kRspFileContent  { "rspfile_content" };
 
@@ -632,6 +671,13 @@ const Edge::DepScanInfo& Edge::ComputeDepScanInfo() {
   return dep_scan_info_;
 }
 
+void Edge::SetRestat() {
+  std::string err;
+  if (!PrecomputeDepScanInfo(&err))
+    Fatal("%s", err.c_str());
+  dep_scan_info_.restat = true;
+}
+
 bool Edge::EvaluateVariable(std::string* out_append, const HashedStrView& key,
                             std::string* err, EdgeEval::EvalPhase phase,
                             EdgeEval::EscapeKind escape) {
@@ -655,6 +701,10 @@ std::string Edge::GetBinding(const HashedStrView& key) {
 
 std::string Edge::GetUnescapedDepfile() {
   return GetBindingImpl(kDepfile, EdgeEval::kFinalScope, EdgeEval::kDoNotEscape);
+}
+
+std::string Edge::GetUnescapedDyndep() {
+  return GetBindingImpl(kDyndep, EdgeEval::kFinalScope, EdgeEval::kDoNotEscape);
 }
 
 std::string Edge::GetUnescapedRspfile() {

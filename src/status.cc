@@ -18,6 +18,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "debug_flags.h"
+
 StatusPrinter::StatusPrinter(const BuildConfig& config)
     : config_(config),
       started_edges_(0), finished_edges_(0), total_edges_(0), running_edges_(0),
@@ -105,6 +107,20 @@ void StatusPrinter::BuildEdgeFinished(Edge* edge, int64_t end_time_millis,
     _setmode(_fileno(stdout), _O_TEXT);  // End Windows extra CR fix
 #endif
   }
+}
+
+void StatusPrinter::BuildLoadDyndeps() {
+  // The DependencyScan calls EXPLAIN() to print lines explaining why
+  // it considers a portion of the graph to be out of date.  Normally
+  // this is done before the build starts, but our caller is about to
+  // load a dyndep file during the build.  Doing so may generate more
+  // exlanation lines (via fprintf directly to stderr), but in an
+  // interactive console the cursor is currently at the end of a status
+  // line.  Start a new line so that the first explanation does not
+  // append to the status line.  After the explanations are done a
+  // new build status line will appear.
+  if (g_explaining)
+    printer_.PrintOnNewLine("");
 }
 
 void StatusPrinter::BuildStarted() {
@@ -350,6 +366,8 @@ void StatusSerializer::BuildEdgeFinished(Edge* edge, int64_t end_time_millis,
 
   Send();
 }
+
+void StatusSerializer::BuildLoadDyndeps() {}
 
 void StatusSerializer::BuildStarted() {
   ninja::Status::BuildStarted* build_started = proto_.mutable_build_started();

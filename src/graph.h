@@ -21,6 +21,7 @@
 #include <vector>
 using namespace std;
 
+#include "dyndep.h"
 #include "eval_env.h"
 #include "timestamp.h"
 #include "util.h"
@@ -168,6 +169,9 @@ struct Node {
   bool precomputed_dirtiness() const { return precomputed_dirtiness_; }
   void set_precomputed_dirtiness(bool value) { precomputed_dirtiness_ = value; }
 
+  bool dyndep_pending() const { return dyndep_pending_; }
+  void set_dyndep_pending(bool pending) { dyndep_pending_ = pending; }
+
   Edge* in_edge() const { return in_edge_; }
   void set_in_edge(Edge* edge) { in_edge_ = edge; }
 
@@ -229,6 +233,10 @@ private:
   /// Set to true once the node's stat and command-hash info have been
   /// precomputed.
   bool precomputed_dirtiness_ = false;
+
+  /// Store whether dyndep information is expected from this node but
+  /// has not yet been loaded.
+  bool dyndep_pending_ = false;
 
   /// A dense integer id for the node, assigned and used by DepsLog.
   int id_ = -1;
@@ -337,6 +345,9 @@ struct Edge {
   bool UsesDepsLog()          { return ComputeDepScanInfo().deps;         }
   bool UsesDepfile()          { return ComputeDepScanInfo().depfile;      }
 
+  /// Dyndep can make an edge restat at runtime
+  void SetRestat();
+
   /// Appends the value of |key| to the output buffer. On error, returns false,
   /// and the content of the output buffer is unspecified.
   bool EvaluateVariable(std::string* out_append, const HashedStrView& key,
@@ -357,6 +368,8 @@ public:
   std::string GetBinding(const HashedStrView& key);
   /// Like GetBinding("depfile"), but without shell escaping.
   string GetUnescapedDepfile();
+  /// Like GetBinding("dyndep"), but without shell escaping.
+  string GetUnescapedDyndep();
   /// Like GetBinding("rspfile"), but without shell escaping.
   string GetUnescapedRspfile();
 
@@ -391,11 +404,13 @@ public:
   vector<Node*> inputs_;
   vector<Node*> outputs_;
   vector<Node*> validations_;
+  Node* dyndep_ = nullptr;
   std::vector<std::pair<HashedStr, std::string>> unevaled_bindings_;
   VisitMark mark_ = VisitNone;
   bool precomputed_dirtiness_ = false;
   size_t id_ = 0;
   bool outputs_ready_ = false;
+  bool deps_loaded_ = false;
   bool deps_missing_ = false;
   bool phony_from_depfile_ = false;
   DepScanInfo dep_scan_info_;
@@ -510,6 +525,7 @@ struct DependencyScan {
       : build_log_(build_log),
         disk_interface_(disk_interface),
         dep_loader_(state, deps_log, disk_interface, depfile_parser_options),
+        dyndep_loader_(state, disk_interface),
         missing_phony_is_err_(missing_phony_is_err) {}
 
   /// Used for tests.
@@ -546,6 +562,13 @@ struct DependencyScan {
     return dep_loader_.deps_log();
   }
 
+  /// Load a dyndep file from the given node's path and update the
+  /// build graph with the new information.  One overload accepts
+  /// a caller-owned 'DyndepFile' object in which to store the
+  /// information loaded from the dyndep file.
+  bool LoadDyndeps(Node* node, string* err) const;
+  bool LoadDyndeps(Node* node, DyndepFile* ddf, string* err) const;
+
  private:
   /// Find the transitive closure of edges and nodes that the given node depends
   /// on. Each Node and Edge is guaranteed to appear at most once in an output
@@ -571,6 +594,7 @@ struct DependencyScan {
   BuildLog* build_log_;
   DiskInterface* disk_interface_;
   ImplicitDepLoader dep_loader_;
+  DyndepLoader dyndep_loader_;
 
   bool missing_phony_is_err_;
 };
