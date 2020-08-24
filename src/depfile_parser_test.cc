@@ -25,7 +25,10 @@ struct DepfileParserTest : public testing::Test {
 
 bool DepfileParserTest::Parse(const char* input, string* err) {
   input_ = input;
-  return parser_.Parse(&input_, err);
+  string warning;
+  bool ret = parser_.Parse(&input_, &warning, err);
+  EXPECT_EQ("", warning);
+  return ret;
 }
 
 TEST_F(DepfileParserTest, Basic) {
@@ -281,10 +284,12 @@ TEST_F(DepfileParserTest, MultipleRulesRejectDifferentOutputs) {
       kDepfileDistinctTargetLinesActionError;
   DepfileParser parser(parser_opts);
   string err;
+  string warning;
   string input =
       "foo: x y\n"
       "bar: y z\n";
-  EXPECT_FALSE(parser.Parse(&input, &err));
+  EXPECT_FALSE(parser.Parse(&input, &warning, &err));
   ASSERT_EQ("depfile has multiple output paths (on separate lines)"
             " [-w depfilemulti=err]", err);
+  ASSERT_EQ("", warning);
 }

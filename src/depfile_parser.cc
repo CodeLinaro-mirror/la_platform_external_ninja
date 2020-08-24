@@ -35,7 +35,7 @@ DepfileParser::DepfileParser(DepfileParserOptions options)
 // otherwise they are passed through verbatim.
 // If anyone actually has depfiles that rely on the more complicated
 // behavior we can adjust this.
-bool DepfileParser::Parse(string* content, string* err) {
+bool DepfileParser::Parse(string* content, string* warning, string* err) {
   // in: current parser input point.
   // end: end of input.
   // parsing_targets: whether we are parsing targets or dependencies.
@@ -239,8 +239,8 @@ yy22:
           } else {
             if (!warned_distinct_target_lines) {
               warned_distinct_target_lines = true;
-              Warning("depfile has multiple output paths (on separate lines); "
-                      "continuing anyway [-w depfilemulti=warn]");
+              *warning = "depfile has multiple output paths (on separate lines); "
+                         "continuing anyway [-w depfilemulti=warn]";
             }
             continue;
           }

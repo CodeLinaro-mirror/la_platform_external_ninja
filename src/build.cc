@@ -980,8 +980,17 @@ bool Builder::ExtractDeps(CommandRunner::Result* result,
       return true;
 
     DepfileParser deps(config_.depfile_parser_options);
-    if (!deps.Parse(&content, err))
+    string warning;
+    if (!deps.Parse(&content, &warning, err))
       return false;
+
+    if (!warning.empty()) {
+      if (!result->output.empty()) {
+        result->output.append("\n");
+      }
+      result->output.append("ninja: warning: ");
+      result->output.append(warning);
+    }
 
     // XXX check depfile matches expected output.
     deps_nodes->reserve(deps.ins_.size());

@@ -910,9 +910,14 @@ bool ImplicitDepLoader::LoadDepFile(Edge* edge, const string& path,
                         ? *depfile_parser_options_
                         : DepfileParserOptions());
   string depfile_err;
-  if (!depfile.Parse(&content, &depfile_err)) {
+  string depfile_warn;
+  if (!depfile.Parse(&content, &depfile_warn, &depfile_err)) {
     *err = path + ": " + depfile_err;
     return false;
+  }
+
+  if (!depfile_warn.empty()) {
+    Warning("%s: %s", path.c_str(), depfile_warn.c_str());
   }
 
   uint64_t unused;
