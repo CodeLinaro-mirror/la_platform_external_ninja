@@ -651,6 +651,14 @@ bool FakeCommandRunner::StartCommand(Edge* edge) {
     if (fs_->ReadFile(edge->inputs_[0]->path(), &content, &err) ==
         DiskInterface::Okay)
       fs_->WriteFile(edge->outputs_[0]->path(), content);
+  } else if (edge->rule().name() == "symlink") {
+    assert(edge->inputs_.size() == 1);
+    assert(edge->outputs_.size() == 1);
+    fs_->CreateSymlink(edge->outputs_[0]->path(), edge->inputs_[0]->path());
+  } else if (edge->rule().name() == "dangling_symlink") {
+    assert(edge->inputs_.empty());
+    assert(edge->outputs_.size() == 1);
+    fs_->CreateSymlink(edge->outputs_[0]->path(), "nil");
   } else {
     printf("unknown command\n");
     return false;
@@ -843,6 +851,232 @@ TEST_F(BuildTest, ImplicitOutput) {
   EXPECT_EQ("", err);
   ASSERT_EQ(1u, command_runner_.commands_ran_.size());
   EXPECT_EQ("touch out out.imp", command_runner_.commands_ran_[0]);
+}
+
+TEST_F(BuildTest, SymlinkOutputsIsValidVariable) {
+  string err;
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule dangling_symlink\n"
+"  command = ln -sf nil $out\n"
+"  symlink_outputs = $out\n"
+"build l1: dangling_symlink\n"
+"rule symlink\n"
+"  command = ln -sf $in $out\n"
+"  symlink_outputs = $out\n"
+"build l2: symlink file\n"
+))
+
+  fs_.Create("file", "content");
+  /// Disabled, but symlink_outputs is still a valid variable.
+  config_.uses_symlink_outputs = false;
+
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_TRUE(builder_.AddTarget("l2", &err));
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+  EXPECT_EQ(2u, command_runner_.commands_ran_.size());
+}
+
+TEST_F(BuildTest, SymlinkOutputsOKWithDeclaration) {
+  string err;
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule dangling_symlink\n"
+"  command = ln -sf nil $out\n"
+"  symlink_outputs = $out\n"
+"build l1: dangling_symlink\n"
+"rule symlink\n"
+"  command = ln -sf $in $out\n"
+"  symlink_outputs = $out\n"
+"build l2: symlink file\n"
+))
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = true;
+
+  fs_.Create("file", "content");
+
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_TRUE(builder_.AddTarget("l2", &err));
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+  EXPECT_EQ(2u, command_runner_.commands_ran_.size());
+}
+
+TEST_F(BuildTest, SymlinkOutputsOKWithUncanonicalizedDeclaration) {
+  string err;
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule dangling_symlink\n"
+"  command = ln -sf nil .//$out\n"
+"  symlink_outputs = ././$out\n"
+"build l1: dangling_symlink\n"
+"rule symlink\n"
+"  command = ln -sf $in ././$out\n"
+"  symlink_outputs = .//$out\n"
+"build l2: symlink file\n"
+))
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = true;
+
+  fs_.Create("file", "content");
+
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_TRUE(builder_.AddTarget("l2", &err));
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("", err);
+  EXPECT_EQ(2u, command_runner_.commands_ran_.size());
+}
+
+TEST_F(BuildTest, FileOutputsWarnWithSymlinkOutputsDeclaration) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule touch\n"
+"  command = touch $out\n"
+"  symlink_outputs = $out\n"
+"build f1: touch\n"));
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = false;
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("f1", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("ninja: f1 is not a symlink, but it was declared in symlink_outputs", status_.last_output_);
+}
+
+TEST_F(BuildTest, FileOutputsErrorWithSymlinkOutputsDeclaration) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule touch\n"
+"  command = touch $out\n"
+"  symlink_outputs = $out\n"
+"build f1: touch\n"));
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = true;
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("f1", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_FALSE(builder_.Build(&err));
+  EXPECT_EQ("subcommand failed", err);
+  EXPECT_EQ("ninja: f1 is not a symlink, but it was declared in symlink_outputs", status_.last_output_);
+}
+
+TEST_F(BuildTest, DanglingSymlinkOutputsWarnWithoutDeclaration) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule dangling_symlink\n"
+"  command = ln -sf nil $out\n"
+"build l1: dangling_symlink\n"
+))
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = false;
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("ninja: l1 is a symlink, but it was not declared in symlink_outputs", status_.last_output_);
+}
+
+TEST_F(BuildTest, RegularSymlinkOutputsWarnWithoutDeclaration) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule symlink\n"
+"  command = ln -sf $in $out\n"
+"build l1: symlink file\n"
+))
+  fs_.Create("file", "content");
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = false;
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("ninja: l1 is a symlink, but it was not declared in symlink_outputs", status_.last_output_);
+}
+
+TEST_F(BuildTest, DanglingSymlinkOutputsErrorWithoutDeclaration) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule dangling_symlink\n"
+"  command = ln -sf nil $out\n"
+"build l1: dangling_symlink\n"
+))
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = true;
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_FALSE(builder_.Build(&err));
+  EXPECT_EQ("subcommand failed", err);
+  EXPECT_EQ("ninja: l1 is a symlink, but it was not declared in symlink_outputs", status_.last_output_);
+}
+
+TEST_F(BuildTest, RegularSymlinkOutputsErrorWithoutDeclaration) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule symlink\n"
+"  command = ln -sf $in $out\n"
+"build l1: symlink file\n"
+))
+  fs_.Create("file", "content");
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = true;
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_FALSE(builder_.Build(&err));
+  EXPECT_EQ("subcommand failed", err);
+  EXPECT_EQ("ninja: l1 is a symlink, but it was not declared in symlink_outputs", status_.last_output_);
+}
+
+TEST_F(BuildTest, ExtraSymlinkOutputsPrintsWarning) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule dangling_symlink\n"
+"  command = ln -sf nil $out\n"
+"build l1: dangling_symlink\n"
+"  symlink_outputs = l1 l2\n"
+))
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = false;
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_TRUE(builder_.Build(&err));
+  EXPECT_EQ("ninja: not all symlink_outputs were created for this edge: l2", status_.last_output_);
+}
+
+TEST_F(BuildTest, ExtraSymlinkOutputsRaisesError) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule dangling_symlink\n"
+"  command = ln -sf nil $out\n"
+"build l1: dangling_symlink\n"
+"  symlink_outputs = l1 l2\n"
+))
+
+  config_.uses_symlink_outputs = true;
+  config_.undeclared_symlink_outputs_should_err = true;
+
+  string err;
+  EXPECT_TRUE(builder_.AddTarget("l1", &err));
+  EXPECT_EQ("", err);
+
+  EXPECT_FALSE(builder_.Build(&err));
+  EXPECT_EQ("subcommand failed", err);
+  EXPECT_EQ("ninja: not all symlink_outputs were created for this edge: l2", status_.last_output_);
 }
 
 // Test case from

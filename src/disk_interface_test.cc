@@ -217,7 +217,7 @@ struct StatTest : public StateTestWithBuiltinRules,
 
   // DiskInterface implementation.
   virtual TimeStamp Stat(const string& path, string* err) const;
-  virtual TimeStamp LStat(const string& path, bool* is_dir, string* err) const;
+  virtual TimeStamp LStat(const string& path, bool* is_dir, bool* is_symlink, string* err) const;
   virtual bool IsStatThreadSafe() const;
   virtual bool WriteFile(const string& path, const string& contents) {
     assert(false);
@@ -248,16 +248,18 @@ struct StatTest : public StateTestWithBuiltinRules,
 };
 
 TimeStamp StatTest::Stat(const string& path, string* err) const {
-  return LStat(path, nullptr, err);
+  return LStat(path, nullptr, nullptr, err);
 }
 
-TimeStamp StatTest::LStat(const string& path, bool* is_dir, string* err) const {
+TimeStamp StatTest::LStat(const string& path, bool* is_dir, bool* is_symlink, string* err) const {
   stats_.push_back(path);
   map<string, TimeStamp>::const_iterator i = mtimes_.find(path);
   if (i == mtimes_.end())
     return 0;  // File not found.
   if (is_dir != nullptr)
     *is_dir = false;
+  if (is_symlink != nullptr)
+    *is_symlink = false;
   return i->second;
 }
 

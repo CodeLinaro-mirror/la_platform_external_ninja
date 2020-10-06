@@ -33,7 +33,7 @@ bool Node::PrecomputeStat(DiskInterface* disk_interface, std::string* err) {
     if (in_edge()->IsPhonyOutput()) {
       return true;
     }
-    return (precomputed_mtime_ = disk_interface->LStat(path_.str(), nullptr, err)) != -1;
+    return (precomputed_mtime_ = disk_interface->LStat(path_.str(), nullptr, nullptr, err)) != -1;
   } else {
     return (precomputed_mtime_ = disk_interface->Stat(path_.str(), err)) != -1;
   }
@@ -42,16 +42,17 @@ bool Node::PrecomputeStat(DiskInterface* disk_interface, std::string* err) {
 bool Node::Stat(DiskInterface* disk_interface, string* err) {
   if (in_edge() != nullptr) {
     assert(!in_edge()->IsPhonyOutput());
-    return (mtime_ = disk_interface->LStat(path_.str(), nullptr, err)) != -1;
+    return (mtime_ = disk_interface->LStat(path_.str(), nullptr, nullptr, err)) != -1;
   } else {
     return (mtime_ = disk_interface->Stat(path_.str(), err)) != -1;
   }
 }
 
-bool Node::LStat(DiskInterface* disk_interface, bool* is_dir, string* err) {
+bool Node::LStat(
+  DiskInterface* disk_interface, bool* is_dir, bool* is_symlink, string* err) {
   assert(in_edge() != nullptr);
   assert(!in_edge()->IsPhonyOutput());
-  return (mtime_ = disk_interface->LStat(path_.str(), is_dir, err)) != -1;
+  return (mtime_ = disk_interface->LStat(path_.str(), is_dir, is_symlink, err)) != -1;
 }
 
 bool DependencyScan::RecomputeNodesDirty(const std::vector<Node*>& initial_nodes,
@@ -603,6 +604,7 @@ static const HashedStrView kDepfile         { "depfile" };
 static const HashedStrView kDyndep          { "dyndep" };
 static const HashedStrView kRspfile         { "rspfile" };
 static const HashedStrView kRspFileContent  { "rspfile_content" };
+static const HashedStrView kSymlinkOutputs  { "symlink_outputs" };
 
 bool Edge::EvaluateCommand(std::string* out_append, bool incl_rsp_file,
                            std::string* err) {
@@ -697,6 +699,10 @@ std::string Edge::GetBindingImpl(const HashedStrView& key,
 
 std::string Edge::GetBinding(const HashedStrView& key) {
   return GetBindingImpl(key, EdgeEval::kFinalScope, EdgeEval::kShellEscape);
+}
+
+std::string Edge::GetSymlinkOutputs() {
+  return GetBindingImpl(kSymlinkOutputs, EdgeEval::kFinalScope, EdgeEval::kDoNotEscape);
 }
 
 std::string Edge::GetUnescapedDepfile() {

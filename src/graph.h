@@ -117,7 +117,7 @@ struct Node {
   bool Stat(DiskInterface* disk_interface, string* err);
 
   /// Only use when lstat() is desired (output files)
-  bool LStat(DiskInterface* disk_interface, bool* is_dir, string* err);
+  bool LStat(DiskInterface* disk_interface, bool* is_dir, bool* is_symlink, string* err);
 
   /// Return false on error.
   bool StatIfNecessary(DiskInterface* disk_interface, string* err) {
@@ -372,6 +372,8 @@ public:
   string GetUnescapedDyndep();
   /// Like GetBinding("rspfile"), but without shell escaping.
   string GetUnescapedRspfile();
+
+  string GetSymlinkOutputs();
 
   void Dump(const char* prefix="") const;
 

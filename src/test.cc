@@ -200,7 +200,7 @@ TimeStamp VirtualFileSystem::Stat(const string& path, string* err) const {
   return 0;
 }
 
-TimeStamp VirtualFileSystem::LStat(const string& path, bool* is_dir, string* err) const {
+TimeStamp VirtualFileSystem::LStat(const string& path, bool* is_dir, bool* is_symlink, string* err) const {
   DirMap::const_iterator d = dirs_.find(path);
   if (d != dirs_.end()) {
     if (is_dir != nullptr)
@@ -212,6 +212,8 @@ TimeStamp VirtualFileSystem::LStat(const string& path, bool* is_dir, string* err
   if (i != files_.end()) {
     if (is_dir != nullptr)
       *is_dir = false;
+    if (is_symlink != nullptr)
+      *is_symlink = i->second.is_symlink;
     *err = i->second.stat_error;
     return i->second.mtime;
   }

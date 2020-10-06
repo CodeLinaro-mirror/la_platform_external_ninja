@@ -166,6 +166,8 @@ struct BuildConfig {
                   failures_allowed(1), max_load_average(-0.0f),
                   frontend(NULL), frontend_file(NULL),
                   missing_depfile_should_err(false),
+                  uses_symlink_outputs(false),
+                  undeclared_symlink_outputs_should_err(false),
                   uses_phony_outputs(false),
                   output_directory_should_err(false),
                   missing_output_file_should_err(false),
@@ -194,6 +196,13 @@ struct BuildConfig {
 
   /// Whether a missing depfile should warn or print an error.
   bool missing_depfile_should_err;
+
+  /// Whether Ninja should check that symlink outputs are declared in the
+  /// symlink_outputs variable
+  bool uses_symlink_outputs;
+
+  /// Whether undeclared symlink outputs should print a warning or error out
+  bool undeclared_symlink_outputs_should_err;
 
   /// Whether the generator uses 'phony_output's
   /// Controls the warnings below

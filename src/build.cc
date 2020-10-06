@@ -16,9 +16,12 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <functional>
+#include <set>
+#include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
-#include <functional>
+#include <vector>
 
 #ifdef _WIN32
 #include <fcntl.h>
@@ -559,7 +562,7 @@ void Builder::Cleanup() {
         // but is interrupted before it touches its output file.)
         string err;
         bool is_dir = false;
-        TimeStamp new_mtime = disk_interface_->LStat((*o)->path(), &is_dir, &err);
+        TimeStamp new_mtime = disk_interface_->LStat((*o)->path(), &is_dir, nullptr, &err);
         if (new_mtime == -1)  // Log and ignore LStat() errors.
           status_->Error("%s", err.c_str());
         if (!is_dir && (!depfile.empty() || (*o)->mtime() != new_mtime))
@@ -815,13 +818,69 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
       }
     }
 
+    set<string> declared_symlinks;
+    if (config_.uses_symlink_outputs) {
+      string symlink_outputs = edge->GetSymlinkOutputs();
+      if (symlink_outputs.length() > 0) {
+        stringstream ss(symlink_outputs);
+        string path;
+        /// Naively split symlink_outputs path by the empty ' ' space character.
+        /// because the '$ ' escape doesn't exist at this stage. In experimentation
+        /// and practice across a number of AOSP configurations, this is OK.
+        ///
+        /// We could modify the GetBindingImpl/GetSymlinkOutputs API to support lists,
+        /// but it'd be an invasive change that'll require a little bit more designing.
+        /// For example, how do we expand "${out}.d" if ${out} is a list?
+        ///
+        /// That said, keep in mind that this is a simple string split that could
+        /// fail with paths containing spaces.
+        while (getline(ss, path, ' ')) {
+          uint64_t slash_bits;
+          if (!CanonicalizePath(&path, &slash_bits, err)) {
+            return false;
+          }
+          declared_symlinks.insert(move(path));
+        }
+      }
+    }
+
     for (vector<Node*>::iterator o = edge->outputs_.begin();
          o != edge->outputs_.end(); ++o) {
       bool is_dir = false;
+      bool is_symlink = false;
       TimeStamp old_mtime = (*o)->mtime();
-      if (!(*o)->LStat(disk_interface_, &is_dir, err))
+      if (!(*o)->LStat(disk_interface_, &is_dir, &is_symlink, err))
         return false;
+
       TimeStamp new_mtime = (*o)->mtime();
+
+      if (config_.uses_symlink_outputs) {
+        /// Warn or error if created symlinks aren't declared in symlink_outputs,
+        /// or if created files are declared in symlink_outputs.
+        string path = (*o)->path();
+        if (is_symlink) {
+          if (declared_symlinks.find(path) == declared_symlinks.end()) {
+            // Not in declared_symlinks
+            if (!result->output.empty())
+              result->output.append("\n");
+            result->output.append("ninja: " + path + " is a symlink, but it was not declared in symlink_outputs");
+            if (config_.undeclared_symlink_outputs_should_err) {
+              result->status = ExitFailure;
+            }
+          } else {
+            declared_symlinks.erase(path);
+          }
+        } else if (!is_symlink && declared_symlinks.find(path) != declared_symlinks.end()) {
+          if (!result->output.empty())
+            result->output.append("\n");
+          result->output.append("ninja: " + path + " is not a symlink, but it was declared in symlink_outputs");
+          declared_symlinks.erase(path);
+          if (config_.undeclared_symlink_outputs_should_err) {
+            result->status = ExitFailure;
+          }
+        }
+      }
+
       if (config_.uses_phony_outputs) {
         if (new_mtime == 0) {
           if (!result->output.empty())
@@ -857,6 +916,21 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
       if (old_mtime == new_mtime && restat) {
         nodes_cleaned.push_back(*o);
         continue;
+      }
+    }
+
+    /// Ensure that declared_symlinks is empty after verifying that symlink outputs
+    /// were declared in the edge. A non-empty declared_symlinks set indicates that
+    /// not all declared symlinks were created by the edge itself (over-specification).
+    if (config_.uses_symlink_outputs && declared_symlinks.size() > 0) {
+      string missing_outputs;
+      for (string symlink : declared_symlinks) {
+        missing_outputs = missing_outputs + " " + symlink;
+      }
+      result->output.append(
+        "ninja: not all symlink_outputs were created for this edge:" + missing_outputs);
+      if (config_.undeclared_symlink_outputs_should_err) {
+        result->status = ExitFailure;
       }
     }
 
@@ -918,7 +992,7 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
 
   if (!deps_type.empty() && !config_.dry_run && !phony_output) {
     Node* out = edge->outputs_[0];
-    TimeStamp deps_mtime = disk_interface_->LStat(out->path(), nullptr, err);
+    TimeStamp deps_mtime = disk_interface_->LStat(out->path(), nullptr, nullptr, err);
     if (deps_mtime == -1)
       return false;
     if (!scan_.deps_log()->RecordDeps(out, deps_mtime, deps_nodes)) {

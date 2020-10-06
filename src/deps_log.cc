@@ -709,7 +709,7 @@ bool DepsLog::Recompact(const string& path, const DiskInterface& disk, string* e
       // If the current manifest does not define this edge, skip if it's missing
       // from the disk.
       string err;
-      TimeStamp mtime = disk.LStat(node->path(), nullptr, &err);
+      TimeStamp mtime = disk.LStat(node->path(), nullptr, nullptr, &err);
       if (mtime == -1)
         Error("%s", err.c_str()); // log and ignore LStat() errors
       if (mtime == 0)
