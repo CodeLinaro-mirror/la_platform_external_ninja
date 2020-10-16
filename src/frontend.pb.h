@@ -275,6 +275,20 @@ struct Status {
     bool has_user_time_;
     uint32_t system_time_;
     bool has_system_time_;
+    uint64_t max_rss_kb_;
+    bool has_max_rss_kb_;
+    uint64_t minor_page_faults_;
+    bool has_minor_page_faults_;
+    uint64_t major_page_faults_;
+    bool has_major_page_faults_;
+    uint64_t io_input_kb_;
+    bool has_io_input_kb_;
+    uint64_t io_output_kb_;
+    bool has_io_output_kb_;
+    uint64_t voluntary_context_switches_;
+    bool has_voluntary_context_switches_;
+    uint64_t involuntary_context_switches_;
+    bool has_involuntary_context_switches_;
 
     EdgeFinished() {
       has_id_ = false;
@@ -288,6 +302,20 @@ struct Status {
       user_time_ = static_cast< uint32_t >(0);
       has_system_time_ = false;
       system_time_ = static_cast< uint32_t >(0);
+      has_max_rss_kb_ = false;
+      max_rss_kb_ = static_cast< uint64_t >(0);
+      has_minor_page_faults_ = false;
+      minor_page_faults_ = static_cast< uint64_t >(0);
+      has_major_page_faults_ = false;
+      major_page_faults_ = static_cast< uint64_t >(0);
+      has_io_input_kb_ = false;
+      io_input_kb_ = static_cast< uint64_t >(0);
+      has_io_output_kb_ = false;
+      io_output_kb_ = static_cast< uint64_t >(0);
+      has_voluntary_context_switches_ = false;
+      voluntary_context_switches_ = static_cast< uint64_t >(0);
+      has_involuntary_context_switches_ = false;
+      involuntary_context_switches_ = static_cast< uint64_t >(0);
     }
 
     EdgeFinished(const EdgeFinished&);
@@ -300,6 +328,13 @@ struct Status {
       WriteString(output__, 4, output_);
       WriteVarint32(output__, 5, user_time_);
       WriteVarint32(output__, 6, system_time_);
+      WriteVarint64(output__, 7, max_rss_kb_);
+      WriteVarint64(output__, 8, minor_page_faults_);
+      WriteVarint64(output__, 9, major_page_faults_);
+      WriteVarint64(output__, 10, io_input_kb_);
+      WriteVarint64(output__, 11, io_output_kb_);
+      WriteVarint64(output__, 12, voluntary_context_switches_);
+      WriteVarint64(output__, 13, involuntary_context_switches_);
     }
 
     size_t ByteSizeLong() const {
@@ -310,6 +345,13 @@ struct Status {
       size += StringSize(output_) + 1;
       size += VarintSize32(user_time_) + 1;
       size += VarintSize32(system_time_) + 1;
+      size += VarintSize64(max_rss_kb_) + 1;
+      size += VarintSize64(minor_page_faults_) + 1;
+      size += VarintSize64(major_page_faults_) + 1;
+      size += VarintSize64(io_input_kb_) + 1;
+      size += VarintSize64(io_output_kb_) + 1;
+      size += VarintSize64(voluntary_context_switches_) + 1;
+      size += VarintSize64(involuntary_context_switches_) + 1;
       return size;
     }
 
@@ -320,6 +362,13 @@ struct Status {
       output_.clear();
       user_time_ = static_cast< uint32_t >(0);
       system_time_ = static_cast< uint32_t >(0);
+      max_rss_kb_ = static_cast< uint64_t >(0);
+      minor_page_faults_ = static_cast< uint64_t >(0);
+      major_page_faults_ = static_cast< uint64_t >(0);
+      io_input_kb_ = static_cast< uint64_t >(0);
+      io_output_kb_ = static_cast< uint64_t >(0);
+      voluntary_context_switches_ = static_cast< uint64_t >(0);
+      involuntary_context_switches_ = static_cast< uint64_t >(0);
     }
 
     uint32_t* mutable_id() {
@@ -369,6 +418,62 @@ struct Status {
     void set_system_time(const uint32_t& value) {
       has_system_time_ = true;
       system_time_ = value;
+    }
+    uint64_t* mutable_max_rss_kb() {
+      has_max_rss_kb_ = true;
+      return &max_rss_kb_;
+    }
+    void set_max_rss_kb(const uint64_t& value) {
+      has_max_rss_kb_ = true;
+      max_rss_kb_ = value;
+    }
+    uint64_t* mutable_minor_page_faults() {
+      has_minor_page_faults_ = true;
+      return &minor_page_faults_;
+    }
+    void set_minor_page_faults(const uint64_t& value) {
+      has_minor_page_faults_ = true;
+      minor_page_faults_ = value;
+    }
+    uint64_t* mutable_major_page_faults() {
+      has_major_page_faults_ = true;
+      return &major_page_faults_;
+    }
+    void set_major_page_faults(const uint64_t& value) {
+      has_major_page_faults_ = true;
+      major_page_faults_ = value;
+    }
+    uint64_t* mutable_io_input_kb() {
+      has_io_input_kb_ = true;
+      return &io_input_kb_;
+    }
+    void set_io_input_kb(const uint64_t& value) {
+      has_io_input_kb_ = true;
+      io_input_kb_ = value;
+    }
+    uint64_t* mutable_io_output_kb() {
+      has_io_output_kb_ = true;
+      return &io_output_kb_;
+    }
+    void set_io_output_kb(const uint64_t& value) {
+      has_io_output_kb_ = true;
+      io_output_kb_ = value;
+    }
+    uint64_t* mutable_voluntary_context_switches() {
+      has_voluntary_context_switches_ = true;
+      return &voluntary_context_switches_;
+    }
+    void set_voluntary_context_switches(const uint64_t& value) {
+      has_voluntary_context_switches_ = true;
+      voluntary_context_switches_ = value;
+    }
+    uint64_t* mutable_involuntary_context_switches() {
+      has_involuntary_context_switches_ = true;
+      return &involuntary_context_switches_;
+    }
+    void set_involuntary_context_switches(const uint64_t& value) {
+      has_involuntary_context_switches_ = true;
+      involuntary_context_switches_ = value;
     }
   };
 

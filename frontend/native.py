@@ -128,7 +128,7 @@ class NinjaNativeFrontend:
                 prefix = 'ninja: warning: '
             elif msg.message.level == 2:
                 prefix = 'ninja: error: '
-            else
+            else:
                 prefix = ''
             self.printer.print_line(prefix + msg.message.message, LinePrinter.LINE_FULL)
 

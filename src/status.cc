@@ -363,6 +363,14 @@ void StatusSerializer::BuildEdgeFinished(Edge* edge, int64_t end_time_millis,
   edge_finished->set_output(result->output);
   edge_finished->set_user_time(timeval_to_ms(result->rusage.ru_utime));
   edge_finished->set_system_time(timeval_to_ms(result->rusage.ru_stime));
+  edge_finished->set_max_rss_kb(result->rusage.ru_maxrss);
+  edge_finished->set_minor_page_faults(result->rusage.ru_minflt);
+  edge_finished->set_major_page_faults(result->rusage.ru_majflt);
+  // ru_inblock and ru_oublock are measured in blocks of 512 bytes.
+  edge_finished->set_io_input_kb(result->rusage.ru_inblock / 2);
+  edge_finished->set_io_output_kb(result->rusage.ru_oublock / 2);
+  edge_finished->set_voluntary_context_switches(result->rusage.ru_nvcsw);
+  edge_finished->set_involuntary_context_switches(result->rusage.ru_nivcsw);
 
   Send();
 }
