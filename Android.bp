@@ -89,7 +89,7 @@ cc_binary_host {
     // jemalloc can improve the overall runtime by 10x vs the default allocator.
     target: {
         linux_glibc: {
-            shared_libs: ["libjemalloc"],
+            shared_libs: ["libjemalloc5"],
         },
     },
 }
