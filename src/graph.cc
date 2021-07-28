@@ -15,6 +15,7 @@
 #include "graph.h"
 
 #include <deque>
+#include <unordered_set>
 #include <assert.h>
 #include <stdio.h>
 
@@ -830,6 +831,15 @@ std::vector<Edge*> Node::GetValidationOutEdges() const {
   return result;
 }
 
+std::vector<Edge*> Node::GetAllOutEdges() const {
+  std::vector<Edge*> result = this->GetOutEdges();
+  std::vector<Edge*> extra = this->GetValidationOutEdges();
+  if (!extra.empty()) {
+    result.insert(result.end(), extra.begin(), extra.end());
+  }
+  return result;
+}
+
 void Node::AddOutEdge(Edge* edge) {
   EdgeList* new_node = new EdgeList { edge };
   while (true) {
@@ -874,6 +884,49 @@ void Node::Dump(const char* prefix) const {
       (*e)->Dump(" +- ");
     }
   }
+}
+
+static void GetDependencyPathsDfs(Node* node, Node* out,
+                                  DepPath& path_till_here,
+                                  std::unordered_set<Node*>& dead_ends,
+                                  std::vector<DepPath>& output) {
+  if (node == out) {
+    path_till_here.push_back(node);
+    output.push_back(path_till_here);
+    path_till_here.pop_back();
+    return;
+  }
+
+  if (dead_ends.find(node) != dead_ends.end())
+    return;
+  const size_t result_count = output.size();
+
+  path_till_here.push_back(node);
+  node->set_dirty(true);
+  for (Edge* edge : node->GetAllOutEdges()) {
+    for (Node* next : edge->outputs_) {
+      if (!next->dirty()) {
+        GetDependencyPathsDfs(next, out, path_till_here, dead_ends, output);
+      }
+    }
+  }
+  node->set_dirty(false);
+  path_till_here.pop_back();
+
+  if (output.size() == result_count) {
+    // There are no paths from `node` to `out`, so skip `node` for the rest of
+    // the search.
+    dead_ends.insert(node);
+  }
+}
+
+std::vector<DepPath> GetDependencyPaths(Node* in, Node* out) {
+  assert(in != nullptr && out != nullptr);
+  std::unordered_set<Node*> dead_ends;
+  std::vector<DepPath> result;
+  DepPath path_till_here;
+  GetDependencyPathsDfs(in, out, path_till_here, dead_ends, result);
+  return result;
 }
 
 bool ImplicitDepLoader::LoadDeps(Edge* edge, string* err) {

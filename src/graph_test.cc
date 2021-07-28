@@ -1101,3 +1101,91 @@ TEST_F(GraphTest, Validation) {
   EXPECT_TRUE(GetNode("out")->dirty());
   EXPECT_TRUE(GetNode("validate")->dirty());
 }
+
+static std::vector<std::vector<std::string>>
+DepPathsToStrings(const std::vector<DepPath>& paths) {
+  std::vector<std::vector<std::string>> result;
+  for (const DepPath &path : paths) {
+    std::vector<std::string> str_vec;
+    for (Node* node : path)
+      str_vec.push_back(node->path());
+    result.push_back(str_vec);
+  }
+  return result;
+}
+
+// a --> b --> c --> d
+TEST_F(GraphTest, GetAllPathsLinkedList) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"build a: phony b\n"
+"build b: phony c\n"
+"build c: phony d\n"));
+  Node* a = GetNode("a");
+  Node* d = GetNode("d");
+  auto paths = DepPathsToStrings(GetDependencyPaths(d, a));
+  ASSERT_EQ(paths.size(), 1);
+  std::vector<string> expected_path = {"d", "c", "b", "a"};
+  ASSERT_TRUE(paths[0] == expected_path);
+}
+
+//        a
+//       / \
+//      b   c
+//     / \
+//    d   e
+//       /
+//      f
+TEST_F(GraphTest, GetAllPathsTree) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"build a: phony b c\n"
+"build b: phony d e\n"
+"build e: phony f\n"));
+  auto paths_f_to_a = DepPathsToStrings(GetDependencyPaths(GetNode("f"), GetNode("a")));
+  ASSERT_TRUE(paths_f_to_a.size() == 1);
+  std::vector<std::string> expected_path = {"f", "e", "b", "a"};
+  ASSERT_TRUE(paths_f_to_a[0] == expected_path);
+}
+
+//        a
+//       / \
+//      b   c
+//       \ /
+//        d
+//       / \
+//      e   f
+//       \ /
+//        g
+TEST_F(GraphTest, GetAllPathsDiamond) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"build a: phony b c\n"
+"build b c: phony d\n"
+"build d: phony e f\n"
+"build f e: phony g\n"));
+  auto paths_g_to_a = DepPathsToStrings(GetDependencyPaths(GetNode("g"), GetNode("a")));
+  std::sort(paths_g_to_a.begin(), paths_g_to_a.end());
+  ASSERT_TRUE(paths_g_to_a.size() == 4);
+  std::vector<std::vector<std::string>> expected_paths;
+  expected_paths.push_back({"g", "e", "d", "b", "a"});
+  expected_paths.push_back({"g", "e", "d", "c", "a"});
+  expected_paths.push_back({"g", "f", "d", "b", "a"});
+  expected_paths.push_back({"g", "f", "d", "c", "a"});
+  ASSERT_TRUE(paths_g_to_a == expected_paths);
+}
+
+//  a --> b <-- e
+//        |     ^
+//        v     |
+//        c --> d --> f
+TEST_F(GraphTest, GetAllPathsInCycles) {
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"build a: phony b\n"
+"build b: phony c\n"
+"build c: phony d\n"
+"build d: phony e f\n"
+"build e: phony b\n"));
+  auto paths_f_to_a = DepPathsToStrings(GetDependencyPaths(GetNode("f"), GetNode("a")));
+  // There is only one valid path that does not go through cycles.
+  ASSERT_TRUE(paths_f_to_a.size() == 1);
+  std::vector<std::string> expected_path = {"f", "d", "c", "b", "a"};
+  ASSERT_TRUE(paths_f_to_a[0] == expected_path);
+}

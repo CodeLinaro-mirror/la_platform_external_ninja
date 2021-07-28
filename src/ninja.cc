@@ -131,6 +131,7 @@ struct NinjaMain : public BuildLogUser {
   // The various subcommands, run via "-t XXX".
   int ToolGraph(const Options* options, int argc, char* argv[]);
   int ToolPath(const Options* options, int argc, char* argv[]);
+  int ToolPaths(const Options* options, int argc, char* argv[]);
   int ToolInputs(const Options* options, int argc, char* argv[]);
   int ToolQuery(const Options* options, int argc, char* argv[]);
   int ToolDeps(const Options* options, int argc, char* argv[]);
@@ -404,15 +405,7 @@ int NinjaMain::ToolPath(const Options* options, int argc, char* argv[]) {
       }
       return 0;
     }
-    for (Edge* edge : node->GetOutEdges()) {
-      for (Node* output : edge->outputs_) {
-        if (node_next.count(output) == 0) {
-          node_next[output] = node;
-          queue.push_back(output);
-        }
-      }
-    }
-    for (Edge* edge : node->GetValidationOutEdges()) {
+    for (Edge* edge : node->GetAllOutEdges()) {
       for (Node* output : edge->outputs_) {
         if (node_next.count(output) == 0) {
           node_next[output] = node;
@@ -423,6 +416,42 @@ int NinjaMain::ToolPath(const Options* options, int argc, char* argv[]) {
   }
   Error("%s does not depend on %s", out->path().c_str(), in->path().c_str());
   return 1;
+}
+
+int NinjaMain::ToolPaths(const Options* options, int argc, char* argv[]) {
+  if (argc != 2) {
+    Error("expected two targets to find dependency chains between");
+    return 1;
+  }
+  std::string err;
+  Node* out = CollectTarget(argv[0], &err);
+  if (!out) {
+    Error("%s", err.c_str());
+    return 1;
+  }
+  Node* in = CollectTarget(argv[1], &err);
+  if (!in) {
+    Error("%s", err.c_str());
+    return 1;
+  }
+
+  std::vector<DepPath> all_paths = GetDependencyPaths(in, out);
+  if (all_paths.empty()) {
+    Error("%s does not depend on %s", out->path().c_str(), in->path().c_str());
+    return 1;
+  }
+
+  // Use newline as delimiter for path
+  // Use space as delimiter for node in path
+  for (const DepPath& path : all_paths) {
+    for (auto it = path.rbegin(); it != path.rend(); ++it) {
+      if (it != path.rbegin())
+        printf(" ");
+      printf("%s", (*it)->path().c_str());
+    }
+    printf("\n");
+  }
+  return 0;
 }
 
 void ToolInputsProcessNodeDeps(Node* node, DepsLog* deps_log, bool leaf_only,
@@ -1031,6 +1060,8 @@ const Tool* ChooseTool(const string& tool_name) {
       Tool::RUN_AFTER_LOGS, &NinjaMain::ToolInputs },
     { "path", "find dependency path between two targets",
       Tool::RUN_AFTER_LOGS, &NinjaMain::ToolPath },
+    { "paths", "find all dependency paths between two targets",
+      Tool::RUN_AFTER_LOGS, &NinjaMain::ToolPaths },
     { "query", "show inputs/outputs for a path",
       Tool::RUN_AFTER_LOGS, &NinjaMain::ToolQuery },
     { "targets",  "list targets by their rule or depth in the DAG",

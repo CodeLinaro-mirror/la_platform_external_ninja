@@ -193,6 +193,7 @@ struct Node {
   bool has_out_edge() const;
   std::vector<Edge*> GetOutEdges() const;
   std::vector<Edge*> GetValidationOutEdges() const;
+  std::vector<Edge*> GetAllOutEdges() const; //(out+validation_out)_edges
   void AddOutEdge(Edge* edge);
   void AddValidationOutEdge(Edge* edge);
 
@@ -264,6 +265,12 @@ private:
   /// inputs debug tool.
   bool inputs_checked_ = false;
 };
+
+// A dependency path, where each node is an input of the next node.
+typedef std::vector<Node*> DepPath;
+
+// Find all dependency paths between an input and output node.
+std::vector<DepPath> GetDependencyPaths(Node* in, Node* out);
 
 struct EdgeEval {
   enum EvalPhase { kParseTime, kFinalScope };
