@@ -88,8 +88,16 @@ cc_binary_host {
     // Use jemalloc for better multithreaded allocation performance. e.g. Using
     // jemalloc can improve the overall runtime by 10x vs the default allocator.
     target: {
-        linux_glibc: {
+        glibc: {
             shared_libs: ["libjemalloc5"],
+        },
+        musl: {
+            static_libs: ["libjemalloc5"],
+            // LLVM toolchain builds use LD_LIBRARY_PATH when running ninja
+            // to affect subprocesses of ninja, but that breaks ninja
+            // when it uses an incompatible libc.  Making ninja static avoids
+            // the problem.
+            static_executable: true,
         },
     },
 }
