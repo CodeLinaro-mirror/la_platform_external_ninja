@@ -134,7 +134,7 @@ def main() -> None:
     shutil.copy2(NINJA_SRC / 'COPYING', out / 'install')
 
     build_id = os.getenv('KOKORO_BUILD_ID', 'dev')
-    zip_dir(out / 'install', out / f'artifact/ninja-{build_id}.zip')
+    zip_dir(out / 'install', out / f'artifact/ninja-{host.value}-{build_id}.zip')
     run_cmd([sys.executable, TOP / 'toolchain/ndk-kokoro/gen_manifest.py',
         '--root', TOP, '-o', out / f'artifact/manifest-{build_id}.xml'])
 
