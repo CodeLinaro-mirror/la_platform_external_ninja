@@ -1,0 +1,17 @@
+name: "ninja"
+description:
+    "ninja build tool"
+
+third_party {
+  url {
+    type: HOMEPAGE
+    value: "https://ninja-build.org/"
+  }
+  url {
+    type: GIT
+    value: "https://github.com/ninja-build/ninja"
+  }
+  version: "v1.10.2"
+  last_upgrade_date { year: 2021 month: 11 day: 16 }
+  license_type: NOTICE
+}
