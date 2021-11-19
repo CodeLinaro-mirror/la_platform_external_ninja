@@ -131,7 +131,9 @@ def main() -> None:
 
     create_new_dir(out / 'install')
     shutil.copy2(ninja_bin, out / 'install')
-    shutil.copy2(NINJA_SRC / 'LICENSE', out / 'install')
+    # The LICENSE file is a symlink to COPYING. Avoid copying it directly because Kokoro uses Cygwin
+    # git, which produces a Cygwin symlink that non-Cygwin Python treats as a small binary file.
+    shutil.copy2(NINJA_SRC / 'COPYING', out / 'install/LICENSE')
 
     build_id = os.getenv('KOKORO_BUILD_ID', 'dev')
     zip_dir(out / 'install', out / f'artifact/ninja-{host.value}-{build_id}.zip')
