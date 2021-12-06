@@ -226,6 +226,7 @@ void Usage(const BuildConfig& config) {
 "options:\n"
 "  --version      print ninja version (\"%s\")\n"
 "  -v, --verbose  show all command lines while building\n"
+"  --quiet        don't show progress status, just command output\n"
 "\n"
 "  -C DIR   change to DIR before doing anything else\n"
 "  -f FILE  specify input build file [default=build.ninja]\n"
@@ -1446,6 +1447,7 @@ int ReadFlags(int* argc, char*** argv,
     OPT_VERSION = 1,
     OPT_FRONTEND = 2,
     OPT_FRONTEND_FILE = 3,
+    OPT_QUIET = 4,
   };
   const option kLongOptions[] = {
 #ifndef _WIN32
@@ -1455,6 +1457,7 @@ int ReadFlags(int* argc, char*** argv,
     { "help", no_argument, NULL, 'h' },
     { "version", no_argument, NULL, OPT_VERSION },
     { "verbose", no_argument, NULL, 'v' },
+    { "quiet", no_argument, NULL, OPT_QUIET },
     { NULL, 0, NULL, 0 }
   };
 
@@ -1511,6 +1514,9 @@ int ReadFlags(int* argc, char*** argv,
         break;
       case 'v':
         config->verbosity = BuildConfig::VERBOSE;
+        break;
+      case OPT_QUIET:
+        config->verbosity = BuildConfig::NO_STATUS_UPDATE;
         break;
       case 'w':
         if (!WarningEnable(optarg, options, config))
