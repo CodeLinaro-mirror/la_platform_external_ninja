@@ -59,6 +59,7 @@ struct Lexer {
   enum Token {
     ERROR,
     BUILD,
+    CHDIR,
     COLON,
     DEFAULT,
     EQUALS,

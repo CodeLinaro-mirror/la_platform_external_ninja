@@ -129,6 +129,7 @@ const char* Lexer::TokenName(Token t) {
   switch (t) {
   case ERROR:    return "lexing error";
   case BUILD:    return "'build'";
+  case CHDIR:    return "'chdir'";
   case COLON:    return "':'";
   case DEFAULT:  return "'default'";
   case EQUALS:   return "'='";
@@ -198,6 +199,7 @@ Lexer::Token Lexer::ReadToken() {
     "build"    { token = BUILD;    break; }
     "pool"     { token = POOL;     break; }
     "rule"     { token = RULE;     break; }
+    "chdir"    { token = CHDIR;    break; }
     "default"  { token = DEFAULT;  break; }
     "="        { token = EQUALS;   break; }
     ":"        { token = COLON;    break; }
