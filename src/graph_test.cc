@@ -1189,3 +1189,40 @@ TEST_F(GraphTest, GetAllPathsInCycles) {
   std::vector<std::string> expected_path = {"f", "d", "c", "b", "a"};
   ASSERT_TRUE(paths_f_to_a[0] == expected_path);
 }
+
+// Check that phony's dependencies' mtimes are propagated.
+TEST_F(GraphTest, PhonyDepsMtimes) {
+  string err;
+  ASSERT_NO_FATAL_FAILURE(AssertParse(&state_,
+"rule touch\n"
+" command = touch $out\n"
+"build in_ph: phony in1\n"
+"build out1: touch in_ph\n"
+));
+  fs_.Create("in1", "");
+  fs_.Create("out1", "");
+  Node* out1 = GetNode("out1");
+  Node* in1  = GetNode("in1");
+
+  EXPECT_TRUE(scan_.RecomputeDirty(GetNode("out1"), NULL, &err));
+  EXPECT_TRUE(!out1->dirty());
+
+  // Get the mtime of out1
+  ASSERT_TRUE(in1->Stat(&fs_, &err));
+  ASSERT_TRUE(out1->Stat(&fs_, &err));
+  TimeStamp out1Mtime1 = out1->mtime();
+  TimeStamp in1Mtime1 = in1->mtime();
+
+  // Touch in1. This should cause out1 to be dirty
+  state_.Reset();
+  fs_.Tick();
+  fs_.Create("in1", "");
+
+  ASSERT_TRUE(in1->Stat(&fs_, &err));
+  EXPECT_GT(in1->mtime(), in1Mtime1);
+
+  EXPECT_TRUE(scan_.RecomputeDirty(GetNode("out1"), NULL, &err));
+  EXPECT_GT(in1->mtime(), in1Mtime1);
+  EXPECT_EQ(out1->mtime(), out1Mtime1);
+  EXPECT_TRUE(out1->dirty());
+}

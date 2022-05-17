@@ -32,13 +32,14 @@
 
 #include <deque>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "browse.h"
 #include "build.h"
 #include "build_log.h"
-#include "deps_log.h"
 #include "clean.h"
 #include "debug_flags.h"
+#include "deps_log.h"
 #include "disk_interface.h"
 #include "graph.h"
 #include "graphviz.h"
@@ -376,6 +377,32 @@ int NinjaMain::ToolGraph(const Options* options, int argc, char* argv[]) {
 }
 
 int NinjaMain::ToolPath(const Options* options, int argc, char* argv[]) {
+  // The path tool uses getopt, and expects argv[0] to contain the name of
+  // the tool, i.e. "path".
+  ++argc;
+  --argv;
+
+  std::unordered_set<std::string> excluded_paths;
+
+  optind = 1;
+  int opt;
+  while ((opt = getopt(argc, argv, "he:")) != -1) {
+    switch (opt) {
+    case 'e':
+      excluded_paths.emplace(optarg);
+      break;
+    case 'h':
+    default:
+      printf(
+          "usage: ninja -t path [options] target1 target2\n\n"
+          "options:\n"
+          "  -e path : Ignore dependency paths that include the given path.\n");
+      return 1;
+    }
+  }
+  argv += optind;
+  argc -= optind;
+
   if (argc != 2) {
     Error("expected two targets to find a dependency chain between");
     return 1;
@@ -408,6 +435,9 @@ int NinjaMain::ToolPath(const Options* options, int argc, char* argv[]) {
     }
     for (Edge* edge : node->GetAllOutEdges()) {
       for (Node* output : edge->outputs_) {
+        if (excluded_paths.count(output->path()) > 0) {
+          continue;
+        }
         if (node_next.count(output) == 0) {
           node_next[output] = node;
           queue.push_back(output);
@@ -455,13 +485,19 @@ int NinjaMain::ToolPaths(const Options* options, int argc, char* argv[]) {
   return 0;
 }
 
-void ToolInputsProcessNodeDeps(Node* node, DepsLog* deps_log, bool leaf_only,
-                               bool include_deps);
+void ToolInputsProcessNodeDeps(
+    Node* node, DepsLog* deps_log, bool leaf_only, bool include_deps,
+    const std::unordered_set<std::string>& excluded_paths);
 
-void ToolInputsProcessNode(Node* input, DepsLog* deps_log, bool leaf_only,
-                           bool include_deps) {
+void ToolInputsProcessNode(
+    Node* input, DepsLog* deps_log, bool leaf_only, bool include_deps,
+    const std::unordered_set<std::string>& excluded_paths) {
   if (input->InputsChecked()) return;
   input->MarkInputsChecked();
+
+  if (excluded_paths.count(input->path()) > 0) {
+    return;
+  }
 
   // Recursively process input edges, possibly printing this node here.
   Edge* input_edge = input->in_edge();
@@ -470,26 +506,29 @@ void ToolInputsProcessNode(Node* input, DepsLog* deps_log, bool leaf_only,
   }
   if (input_edge) {
     for (Node* input : input_edge->inputs_) {
-      ToolInputsProcessNode(input, deps_log, leaf_only, include_deps);
+      ToolInputsProcessNode(input, deps_log, leaf_only, include_deps,
+                            excluded_paths);
     }
     if (include_deps && input_edge->outputs_.size() > 0) {
       // Check deps on the input edge's first output because deps log entries
       // are only stored on the first output of an edge.
       ToolInputsProcessNodeDeps(input_edge->outputs_[0], deps_log, leaf_only,
-                                include_deps);
+                                include_deps, excluded_paths);
     }
   }
 }
 
-void ToolInputsProcessNodeDeps(Node* node, DepsLog* deps_log, bool leaf_only,
-                               bool include_deps) {
+void ToolInputsProcessNodeDeps(
+    Node* node, DepsLog* deps_log, bool leaf_only, bool include_deps,
+    const std::unordered_set<std::string>& excluded_paths) {
   // Print all of this node's deps from the deps log. This often includes files
   // that are not known by the node's input edge.
   if (deps_log->IsDepsEntryLiveFor(node)) {
     if (DepsLog::Deps* deps = deps_log->GetDeps(node); deps != nullptr) {
       for (int i = 0; i < deps->node_count; ++i) {
         if (Node* dep = deps->nodes[i]; dep != nullptr) {
-          ToolInputsProcessNode(dep, deps_log, leaf_only, include_deps);
+          ToolInputsProcessNode(dep, deps_log, leaf_only, include_deps,
+                                excluded_paths);
         }
       }
     }
@@ -504,10 +543,11 @@ int NinjaMain::ToolInputs(const Options* options, int argc, char* argv[]) {
 
   bool leaf_only = true;
   bool include_deps = false;
+  std::unordered_set<std::string> excluded_paths;
 
   optind = 1;
   int opt;
-  while ((opt = getopt(argc, argv, "idh")) != -1) {
+  while ((opt = getopt(argc, argv, "idhe:")) != -1) {
     switch (opt) {
       case 'i':
         leaf_only = false;
@@ -515,13 +555,17 @@ int NinjaMain::ToolInputs(const Options* options, int argc, char* argv[]) {
       case 'd':
         include_deps = true;
         break;
+      case 'e':
+        excluded_paths.emplace(optarg);
+        break;
       case 'h':
       default:
         printf(
             "usage: ninja -t inputs [options] target [target...]\n\n"
             "options:\n"
-            "  -i    Include intermediate inputs.\n"
-            "  -d    Include deps from the deps log file (.ninja_deps).\n");
+            "  -i      : Include intermediate inputs.\n"
+            "  -d      : Include deps from the deps log file (.ninja_deps).\n"
+            "  -e path : Ignore dependency paths that include the given path.\n");
         return 1;
     }
   }
@@ -541,11 +585,12 @@ int NinjaMain::ToolInputs(const Options* options, int argc, char* argv[]) {
     // so that this node is not included in the output.
     if (Edge* edge = node->in_edge(); edge != nullptr) {
       for (Node* input : edge->inputs_) {
-        ToolInputsProcessNode(input, &deps_log_, leaf_only, include_deps);
+        ToolInputsProcessNode(input, &deps_log_, leaf_only, include_deps,
+                              excluded_paths);
       }
       if (include_deps && edge->outputs_.size() > 0) {
         ToolInputsProcessNodeDeps(edge->outputs_[0], &deps_log_, leaf_only,
-                                  include_deps);
+                                  include_deps, excluded_paths);
       }
     }
   }

@@ -119,6 +119,9 @@ struct Node {
   /// Only use when lstat() is desired (output files)
   bool LStat(DiskInterface* disk_interface, bool* is_dir, bool* is_symlink, string* err);
 
+  /// If the file doesn't exist, set the mtime_ from its dependencies
+  void UpdatePhonyMtime(TimeStamp mtime);
+
   /// Return false on error.
   bool StatIfNecessary(DiskInterface* disk_interface, string* err) {
     if (status_known())

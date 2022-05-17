@@ -49,6 +49,12 @@ bool Node::Stat(DiskInterface* disk_interface, string* err) {
   }
 }
 
+void Node::UpdatePhonyMtime(TimeStamp mtime) {
+  if (!exists()) {
+    mtime_ = std::max(mtime_, mtime);
+  }
+}
+
 bool Node::LStat(
   DiskInterface* disk_interface, bool* is_dir, bool* is_symlink, string* err) {
   assert(in_edge() != nullptr);
@@ -426,6 +432,12 @@ bool DependencyScan::RecomputeOutputsDirty(Edge* edge, Node* most_recent_input,
           *outputs_dirty = true;
           return true;
         }
+      }
+
+      // Update the mtime with the newest input. Dependents can thus call mtime()
+      // on the fake node and get the latest mtime of the dependencies
+      if (most_recent_input) {
+        (*o)->UpdatePhonyMtime(most_recent_input->mtime());
       }
       continue;
     }
