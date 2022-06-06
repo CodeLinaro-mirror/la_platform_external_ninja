@@ -43,7 +43,7 @@ class ChunkParser {
 
   void OutItem(ParserItem item) {
     current_clump_ = nullptr;
-    out_->push_back(item);
+    out_->push_back(std::move(item));
   }
 
   bool OutError(const std::string& err) {
@@ -110,6 +110,40 @@ bool ChunkParser::ParseFileInclude(bool new_scope) {
   include->diag_pos_ = lexer_.GetLastTokenOffset();
   if (!ExpectToken(Lexer::NEWLINE))
     return false;
+  // If new_scope == false, it would be possible to just ignore the next token.
+  // If a Lexer::INDENT somehow was the next token, it would fail with
+  // 'ninja: build.ninja:NNN: unexpected indent'. This might be a slightly more
+  // helpful message.
+  if (lexer_.PeekToken(Lexer::INDENT)) {
+    if (!new_scope)
+      return LexerError("indent after 'include' line is invalid.");
+    if (!lexer_.PeekToken(Lexer::CHDIR))
+      return LexerError("only 'chdir =' is allowed after 'subninja' line.");
+    if (!ExpectToken(Lexer::EQUALS))
+      return LexerError("only 'chdir =' is allowed after 'subninja' line.");
+    if (!lexer_.ReadPath(&include->chdir_, &err))
+      return OutError(err);
+
+    // Disallow '..' and '.' relative paths
+    include->chdir_plus_slash_ = include->chdir_.str_.AsString();
+    auto first_sep = include->chdir_plus_slash_.find('/');
+    if (first_sep == std::string::npos) {
+      first_sep = include->chdir_plus_slash_.size();
+    }
+#ifdef _WIN32
+    auto first_win_sep = include->chdir_plus_slash_.find('\\');
+    if (first_win_sep != std::string::npos && first_win_sep < first_sep) {
+      first_sep = first_win_sep;
+    }
+#endif
+    if ((first_sep == 1 && include->chdir_plus_slash_[0] == '.') ||
+        (first_sep == 2 && !include->chdir_plus_slash_.compare(0, 2, "..")))
+      return LexerError("invalid use of '.' or '..' in chdir");
+
+    // The trailing '/' is added in manifest_parser.cc.
+    OutItem(include);
+    return true;
+  }
   OutItem(include);
   return true;
 }
@@ -193,8 +227,9 @@ bool ChunkParser::ParseBinding() {
   // bindings from an earlier chunk. We could probably do this version check as
   // part of ordinary scope setup while processing a Clump, but keeping it
   // separate guarantees that the version check is done early enough.
-  if (binding->name_ == kNinjaRequiredVersion)
+  if (binding->name_ == kNinjaRequiredVersion) {
     OutItem(new RequiredVersion { binding->parsed_value_ });
+  }
 
   Clump* clump = MakeClump();
   binding->pos_ = clump->AllocNextPos();

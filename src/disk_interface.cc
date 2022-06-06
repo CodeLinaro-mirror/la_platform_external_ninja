@@ -25,7 +25,9 @@
 #ifdef _WIN32
 #include <sstream>
 #include <windows.h>
-#include <direct.h>  // _mkdir
+#include <direct.h>  // _mkdir, chdir, getcwd
+#else
+#include <unistd.h>  // chdir, getcwd
 #endif
 
 #include "metrics.h"
@@ -349,4 +351,27 @@ void RealDiskInterface::AllowStatCache(bool allow) {
   if (!use_cache_)
     cache_.clear();
 #endif
+}
+
+bool RealDiskInterface::Getcwd(std::string* out_path, std::string* err) {
+  vector<char> cwd;
+  do {
+    cwd.resize(cwd.size() + 1024);
+    errno = 0;
+  } while (!::getcwd(&cwd[0], cwd.size()) && errno == ERANGE);
+  if (errno == 0) {
+    out_path->assign(&cwd[0]);
+    err->clear();
+    return true;
+  }
+  *err = "getcwd failed: ";
+  *err += strerror(errno);
+  return false;
+}
+
+bool RealDiskInterface::Chdir(const std::string dir, std::string* err) {
+  if (chdir(dir.c_str()) == 0)
+    return true;
+  *err = "chdir(" + dir + ") failed: " + strerror(errno);
+  return false;
 }

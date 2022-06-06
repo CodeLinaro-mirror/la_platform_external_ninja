@@ -166,6 +166,8 @@ string GetLastErrorString();
 
 /// Calls Fatal() with a function name and GetLastErrorString.
 NORETURN void Win32Fatal(const char* function, const char* hint = NULL);
+
+#define NINJA_WIN32_CD_DELIM ":NINJA_WIN32_CD:"
 #endif
 
 template <typename T, typename U>

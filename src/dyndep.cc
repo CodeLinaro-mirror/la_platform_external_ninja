@@ -35,7 +35,7 @@ bool DyndepLoader::LoadDyndeps(Node* node, DyndepFile* ddf,
   node->set_dyndep_pending(false);
 
   // Load the dyndep information from the file.
-  EXPLAIN("loading dyndep file '%s'", node->path().c_str());
+  EXPLAIN("loading dyndep file '%s'", node->globalPath().h.data());
   if (!LoadDyndepFile(node, ddf, err))
     return false;
 
@@ -51,7 +51,7 @@ bool DyndepLoader::LoadDyndeps(Node* node, DyndepFile* ddf,
     if (ddi == ddf->end()) {
       *err = ("'" + edge->outputs_[0]->path() + "' "
               "not mentioned in its dyndep file "
-              "'" + node->path() + "'");
+              "'" + node->globalPath().h.data() + "'");
       return false;
     }
 
@@ -67,9 +67,9 @@ bool DyndepLoader::LoadDyndeps(Node* node, DyndepFile* ddf,
        ++oe) {
     if (!oe->second.used_) {
       Edge* const edge = oe->first;
-      *err = ("dyndep file '" + node->path() + "' mentions output "
-              "'" + edge->outputs_[0]->path() + "' whose build statement "
-              "does not have a dyndep binding for the file");
+      *err = ("dyndep file '" + node->globalPath().h.str_view().AsString() +
+              "' mentions output '" + edge->outputs_[0]->path() +
+              "' whose build statement does not have a dyndep binding for the file");
       return false;
     }
   }
@@ -119,6 +119,6 @@ bool DyndepLoader::UpdateEdge(Edge* edge, Dyndeps const* dyndeps,
 
 bool DyndepLoader::LoadDyndepFile(Node* file, DyndepFile* ddf,
                                   std::string* err) const {
-  DyndepParser parser(state_, disk_interface_, ddf);
-  return parser.Load(file->path(), err);
+  DyndepParser parser(state_, disk_interface_, ddf, file->scope());
+  return parser.Load(file->globalPath().h.data(), err);
 }

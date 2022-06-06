@@ -24,7 +24,7 @@ struct EvalString;
 /// Parses dyndep files.
 struct DyndepParser: public Parser {
   DyndepParser(State* state, FileReader* file_reader,
-               DyndepFile* dyndep_file);
+               DyndepFile* dyndep_file, Scope* scope);
 
   /// Parse a text string of input.  Used by tests.
   bool ParseTest(const string& input, string* err) {

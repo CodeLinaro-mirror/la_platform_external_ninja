@@ -96,6 +96,13 @@ struct FileReader {
   virtual Status LoadFile(const std::string& path,
                           std::unique_ptr<LoadedFile>* result,
                           std::string* err) = 0;
+
+  // Get the current working directory.  On success, return true.
+  // TODO: use fork() instead of Getcwd().
+  virtual bool Getcwd(std::string* out_path, std::string* err) = 0;
+
+  // Change the current working directory.  On success, return true.
+  virtual bool Chdir(const std::string dir, std::string* err) = 0;
 };
 
 /// Interface for accessing the disk.
@@ -152,6 +159,8 @@ struct RealDiskInterface : public DiskInterface {
   virtual Status LoadFile(const std::string& path,
                           std::unique_ptr<LoadedFile>* result,
                           std::string* err);
+  virtual bool Getcwd(std::string* out_path, std::string* err);
+  virtual bool Chdir(const std::string dir, std::string* err);
   virtual int RemoveFile(const string& path);
 
   /// Whether stat information can be cached.  Only has an effect on Windows.

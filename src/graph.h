@@ -97,9 +97,10 @@ inline bool operator<(const NodeFirstReference& x,
 /// Information about a node in the dependency graph: the file, whether
 /// it's dirty, mtime, etc.
 struct Node {
-  Node(const HashedStrView& path, uint64_t initial_slash_bits)
+  Node(const HashedStrView& path, Scope* scope, uint64_t initial_slash_bits)
       : path_(path),
-        first_reference_({ kLastDeclIndex, initial_slash_bits }) {}
+        first_reference_({ kLastDeclIndex, initial_slash_bits }),
+        scope_(scope) {}
   ~Node();
 
   /// Precompute the node's Stat() call from a worker thread with exclusive
@@ -154,14 +155,34 @@ struct Node {
     return mtime_ != -1;
   }
 
+  /// path is exactly what the .ninja file specified, and matches the depfile
+  /// or rspfile contents. This path is not unique and not the path you want.
   const std::string& path() const { return path_.str(); }
-  const HashedStr& path_hashed() const { return path_; }
+  /// globalPath is globally unique. This can be passed to State::LookupNode().
+  GlobalPathStr globalPath();
+  Scope* scope() const { return scope_; }
   /// Get |path()| but use slash_bits to convert back to original slash styles.
-  string PathDecanonicalized() const {
-    return PathDecanonicalized(path_.str(), slash_bits());
+  /// Resolve node into target Scope by adding any chdir() between the two.
+  string PathDecanonicalized(Scope* target) const {
+    return target->ResolveChdir(scope(),
+                                PathDecanonicalized(path_.str(), slash_bits()));
   }
+
   static string PathDecanonicalized(const string& path,
                                     uint64_t slash_bits);
+
+  void resetScopeTo(Scope* newScope) {
+    assert(newScope && "resetScopeTo(nullptr) is invalid");
+    std::string newPath = path_.str();
+    if (!newPath.compare(0, newScope->chdir().size(), newScope->chdir())) {
+      newPath.erase(0, newScope->chdir().size());
+    }
+    scope_->resetGlobalPath(path_.str());
+    newScope->resetGlobalPath(newPath);
+
+    path_ = newPath;
+    scope_ = newScope;
+  }
 
   TimeStamp mtime() const { return mtime_; }
 
@@ -218,7 +239,7 @@ struct Node {
   void MarkInputsChecked() { inputs_checked_ = true; }
 
 private:
-  const HashedStr path_;
+  HashedStr path_;
 
   /// Possible values of mtime_:
   ///   -1: file hasn't been examined
@@ -248,6 +269,7 @@ private:
   std::atomic<NodeFirstReference> first_reference_;
 
   Edge* in_edge_ = nullptr;
+  Scope* scope_ = nullptr;
 
   struct EdgeList {
     EdgeList(Edge* edge=nullptr, EdgeList* next=nullptr)
@@ -287,7 +309,7 @@ struct EdgeEval {
   /// Looks up the variable and appends its value to the output buffer. Returns
   /// false on error (i.e. a cycle in rule variable expansion).
   bool EvaluateVariable(std::string* out_append, const HashedStrView& var,
-                        std::string* err);
+                        Scope* target, std::string* err);
 
   /// There are only a small number of bindings allowed on a rule. If we recurse
   /// enough times, we're guaranteed to repeat a variable.
@@ -307,7 +329,7 @@ private:
   void AppendPathList(std::string* out_append,
                       std::vector<Node*>::iterator begin,
                       std::vector<Node*>::iterator end,
-                      char sep);
+                      char sep, Scope* target);
 };
 
 /// An edge in the dependency graph; links between Nodes using Rules.
@@ -361,7 +383,7 @@ struct Edge {
   /// Appends the value of |key| to the output buffer. On error, returns false,
   /// and the content of the output buffer is unspecified.
   bool EvaluateVariable(std::string* out_append, const HashedStrView& key,
-                        std::string* err,
+                        Scope* target, std::string* err,
                         EdgeEval::EvalPhase phase=EdgeEval::kFinalScope,
                         EdgeEval::EscapeKind escape=EdgeEval::kShellEscape);
 

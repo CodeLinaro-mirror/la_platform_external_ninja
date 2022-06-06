@@ -587,7 +587,9 @@ bool DepsLog::Load(const string& path, State* state, string* err) {
         // already have a correct slash_bits that GetNode will look up), or it
         // is an implicit dependency from a .d which does not affect the build
         // command (and so need not have its slashes maintained).
-        Node* node = state->GetNode(record.u.path.path, 0);
+        Node* node =
+            state->GetNode(state->root_scope_.GlobalPath(record.u.path.path),
+                           0);
         assert(node->id() < 0);
         node->set_id(node_id);
         nodes_[node_id] = node;
@@ -709,7 +711,8 @@ bool DepsLog::Recompact(const string& path, const DiskInterface& disk, string* e
       // If the current manifest does not define this edge, skip if it's missing
       // from the disk.
       string err;
-      TimeStamp mtime = disk.LStat(node->path(), nullptr, nullptr, &err);
+      TimeStamp mtime = disk.LStat(node->globalPath().h.data(),
+                                   nullptr, nullptr, &err);
       if (mtime == -1)
         Error("%s", err.c_str()); // log and ignore LStat() errors
       if (mtime == 0)
@@ -761,7 +764,8 @@ bool DepsLog::UpdateDeps(int out_id, Deps* deps) {
 }
 
 bool DepsLog::RecordId(Node* node) {
-  int path_size = node->path().size();
+  string pathG = node->globalPath().h.data();
+  int path_size = pathG.size();
   int padding = (4 - path_size % 4) % 4;  // Pad path to 4 byte boundary.
 
   unsigned size = path_size + padding + 4;
@@ -771,8 +775,8 @@ bool DepsLog::RecordId(Node* node) {
   }
   if (fwrite(&size, 4, 1, file_) < 1)
     return false;
-  if (fwrite(node->path().data(), path_size, 1, file_) < 1) {
-    assert(node->path().size() > 0);
+  if (fwrite(pathG.data(), path_size, 1, file_) < 1) {
+    assert(pathG.size() > 0);
     return false;
   }
   if (padding && fwrite("\0\0", padding, 1, file_) < 1)

@@ -237,6 +237,14 @@ struct StatTest : public StateTestWithBuiltinRules,
     assert(false);
     return NotFound;
   }
+  virtual bool Getcwd(std::string* out_path, std::string* err) {
+    assert(false);
+    return false;
+  }
+  virtual bool Chdir(const std::string dir, std::string* err) {
+    assert(false);
+    return false;
+  }
   virtual int RemoveFile(const string& path) {
     assert(false);
     return 0;

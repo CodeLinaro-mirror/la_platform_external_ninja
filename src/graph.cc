@@ -34,18 +34,18 @@ bool Node::PrecomputeStat(DiskInterface* disk_interface, std::string* err) {
     if (in_edge()->IsPhonyOutput()) {
       return true;
     }
-    return (precomputed_mtime_ = disk_interface->LStat(path_.str(), nullptr, nullptr, err)) != -1;
+    return (precomputed_mtime_ = disk_interface->LStat(globalPath().h.data(), nullptr, nullptr, err)) != -1;
   } else {
-    return (precomputed_mtime_ = disk_interface->Stat(path_.str(), err)) != -1;
+    return (precomputed_mtime_ = disk_interface->Stat(globalPath().h.data(), err)) != -1;
   }
 }
 
 bool Node::Stat(DiskInterface* disk_interface, string* err) {
   if (in_edge() != nullptr) {
     assert(!in_edge()->IsPhonyOutput());
-    return (mtime_ = disk_interface->LStat(path_.str(), nullptr, nullptr, err)) != -1;
+    return (mtime_ = disk_interface->LStat(globalPath().h.data(), nullptr, nullptr, err)) != -1;
   } else {
-    return (mtime_ = disk_interface->Stat(path_.str(), err)) != -1;
+    return (mtime_ = disk_interface->Stat(globalPath().h.data(), err)) != -1;
   }
 }
 
@@ -59,7 +59,7 @@ bool Node::LStat(
   DiskInterface* disk_interface, bool* is_dir, bool* is_symlink, string* err) {
   assert(in_edge() != nullptr);
   assert(!in_edge()->IsPhonyOutput());
-  return (mtime_ = disk_interface->LStat(path_.str(), is_dir, is_symlink, err)) != -1;
+  return (mtime_ = disk_interface->LStat(globalPath().h.data(), is_dir, is_symlink, err)) != -1;
 }
 
 bool DependencyScan::RecomputeNodesDirty(const std::vector<Node*>& initial_nodes,
@@ -221,7 +221,7 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
     if (!node->StatIfNecessary(disk_interface_, err))
       return false;
     if (!node->exists())
-      EXPLAIN("%s has no in-edge and is missing", node->path().c_str());
+      EXPLAIN("%s has no in-edge and is missing", node->globalPath().h.data());
     node->set_dirty(!node->exists());
     return true;
   }
@@ -245,11 +245,12 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
 
   if (phony_output) {
     EXPLAIN("edge with output %s is a phony output, so is always dirty",
-            node->path().c_str());
+            node->globalPath().h.data());
     dirty = true;
 
     if (edge->UsesDepsLog() || edge->UsesDepfile()) {
-      *err = "phony output " + node->path() + " has deps, which does not make sense.";
+      *err = "phony output " + node->globalPath().h.str_view().AsString() +
+             " has deps, which does not make sense.";
       return false;
     }
   } else {
@@ -323,15 +324,15 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
 
     if (!phony_output && !edge->is_order_only(i - edge->inputs_.begin())) {
       if (in_edge != nullptr && in_edge->IsPhonyOutput()) {
-        *err = "real file '" + node->path() +
-               "' depends on phony output '" + (*i)->path() + "'\n";
+        *err = "real file '" + node->globalPath().h.str_view().AsString() +
+               "' depends on phony output '" + (*i)->globalPath().h.str_view().AsString() + "'\n";
         return false;
       }
 
       // If a regular input is dirty (or missing), we're dirty.
       // Otherwise consider mtime.
       if ((*i)->dirty()) {
-        EXPLAIN("%s is dirty", (*i)->path().c_str());
+        EXPLAIN("%s is dirty", (*i)->globalPath().h.data());
         dirty = true;
       } else {
         if (!most_recent_input || (*i)->mtime() > most_recent_input->mtime()) {
@@ -396,10 +397,10 @@ bool DependencyScan::VerifyDAG(Node* node, vector<Node*>* stack, string* err) {
   // Construct the error message rejecting the cycle.
   *err = "dependency cycle: ";
   for (vector<Node*>::const_iterator i = start; i != stack->end(); ++i) {
-    err->append((*i)->path());
+    err->append((*i)->globalPath().h.data());
     err->append(" -> ");
   }
-  err->append((*start)->path());
+  err->append((*start)->globalPath().h.data());
 
   if ((start + 1) == stack->end() && edge->maybe_phonycycle_diagnostic()) {
     // The manifest parser would have filtered out the self-referencing
@@ -424,11 +425,12 @@ bool DependencyScan::RecomputeOutputsDirty(Edge* edge, Node* most_recent_input,
         // For phony targets defined in the ninja file, error when using dirty phony edges.
         // The phony edges automatically created from depfiles still need the old behavior.
         if (missing_phony_is_err_ && !edge->phony_from_depfile_) {
-          *err = "output " + (*o)->path() + " of phony edge doesn't exist. Missing 'phony_output = true'?";
+          *err = "output " + (*o)->globalPath().h.str_view().AsString() +
+                " of phony edge doesn't exist. Missing 'phony_output = true'?";
           return false;
         } else {
           EXPLAIN("output %s of phony edge with no inputs doesn't exist",
-                  (*o)->path().c_str());
+                  (*o)->globalPath().h.data());
           *outputs_dirty = true;
           return true;
         }
@@ -459,7 +461,7 @@ bool DependencyScan::RecomputeOutputDirty(Edge* edge,
 
   // Dirty if we're missing the output.
   if (!output->exists()) {
-    EXPLAIN("output %s doesn't exist", output->path().c_str());
+    EXPLAIN("output %s doesn't exist", output->globalPath().h.data());
     return true;
   }
 
@@ -473,7 +475,7 @@ bool DependencyScan::RecomputeOutputDirty(Edge* edge,
     // considered dirty if an input was modified since the previous run.
     bool used_restat = false;
     if (edge->IsRestat() && build_log() &&
-        (entry = build_log()->LookupByOutput(output->path_hashed()))) {
+        (entry = build_log()->LookupByOutput(output->globalPath()))) {
       output_mtime = entry->mtime;
       used_restat = true;
     }
@@ -481,8 +483,8 @@ bool DependencyScan::RecomputeOutputDirty(Edge* edge,
     if (output_mtime < most_recent_input->mtime()) {
       EXPLAIN("%soutput %s older than most recent input %s "
               "(%" PRId64 " vs %" PRId64 ")",
-              used_restat ? "restat of " : "", output->path().c_str(),
-              most_recent_input->path().c_str(),
+              used_restat ? "restat of " : "", output->globalPath().h.data(),
+              most_recent_input->globalPath().h.data(),
               output_mtime, most_recent_input->mtime());
       return true;
     }
@@ -490,13 +492,13 @@ bool DependencyScan::RecomputeOutputDirty(Edge* edge,
 
   if (build_log()) {
     bool generator = edge->IsGenerator();
-    if (entry || (entry = build_log()->LookupByOutput(output->path_hashed()))) {
+    if (entry || (entry = build_log()->LookupByOutput(output->globalPath()))) {
       if (!generator &&
           command_hash != entry->command_hash) {
         // May also be dirty due to the command changing since the last build.
         // But if this is a generator rule, the command changing does not make us
         // dirty.
-        EXPLAIN("command line changed for %s", output->path().c_str());
+        EXPLAIN("command line changed for %s", output->globalPath().h.data());
         return true;
       }
       if (most_recent_input && entry->mtime < most_recent_input->mtime()) {
@@ -505,13 +507,13 @@ bool DependencyScan::RecomputeOutputDirty(Edge* edge,
         // on disk is newer if a previous run wrote to the output file but
         // exited with an error or was interrupted.
         EXPLAIN("recorded mtime of %s older than most recent input %s (%" PRId64 " vs %" PRId64 ")",
-                output->path().c_str(), most_recent_input->path().c_str(),
+                output->globalPath().h.data(), most_recent_input->globalPath().h.data(),
                 entry->mtime, most_recent_input->mtime());
         return true;
       }
     }
     if (!entry && !generator) {
-      EXPLAIN("command line not found in log for %s", output->path().c_str());
+      EXPLAIN("command line not found in log for %s", output->globalPath().h.data());
       return true;
     }
   }
@@ -543,6 +545,7 @@ static const HashedStrView kOut       { "out" };
 
 bool EdgeEval::EvaluateVariable(std::string* out_append,
                                 const HashedStrView& var,
+                                Scope* target,
                                 std::string* err) {
   if (var == kIn || var == kInNewline) {
     int explicit_deps_count = edge_->inputs_.size() - edge_->implicit_deps_ -
@@ -550,14 +553,14 @@ bool EdgeEval::EvaluateVariable(std::string* out_append,
     AppendPathList(out_append,
                    edge_->inputs_.begin(),
                    edge_->inputs_.begin() + explicit_deps_count,
-                   var == kIn ? ' ' : '\n');
+                   var == kIn ? ' ' : '\n', target);
     return true;
   } else if (var == kOut) {
     int explicit_outs_count = edge_->outputs_.size() - edge_->implicit_outs_;
     AppendPathList(out_append,
                    edge_->outputs_.begin(),
                    edge_->outputs_.begin() + explicit_outs_count,
-                   ' ');
+                   ' ', target);
     return true;
   }
 
@@ -579,7 +582,7 @@ bool EdgeEval::EvaluateVariable(std::string* out_append,
     }
     recursion_vars_[recursion_count_++] = var.str_view();
 
-    return EvaluateBindingOnRule(out_append, *binding_pattern, this, err);
+    return EvaluateBindingOnRule(out_append, *binding_pattern, this, target, err);
   }
 
   // Fall back to the edge's enclosing scope.
@@ -594,12 +597,12 @@ bool EdgeEval::EvaluateVariable(std::string* out_append,
 void EdgeEval::AppendPathList(std::string* out_append,
                               std::vector<Node*>::iterator begin,
                               std::vector<Node*>::iterator end,
-                              char sep) {
+                              char sep, Scope* target) {
   for (auto it = begin; it != end; ++it) {
     if (it != begin)
       out_append->push_back(sep);
 
-    const string& path = (*it)->PathDecanonicalized();
+    string path = (*it)->PathDecanonicalized(target);
     if (escape_in_out_ == kShellEscape) {
 #if _WIN32
       GetWin32EscapedString(path, out_append);
@@ -622,11 +625,31 @@ static const HashedStrView kSymlinkOutputs  { "symlink_outputs" };
 bool Edge::EvaluateCommand(std::string* out_append, bool incl_rsp_file,
                            std::string* err) {
   METRIC_RECORD("eval command");
-  if (!EvaluateVariable(out_append, kCommand, err))
+  auto len_pre_chdir = out_append->size();
+  if (!pos_.scope()->chdir().empty()) {
+#ifdef _WIN32
+    out_append->append(NINJA_WIN32_CD_DELIM);
+    out_append->append(pos_.scope()->chdir());
+    out_append->append(NINJA_WIN32_CD_DELIM);
+#else
+    out_append->append("cd \"");
+    out_append->append(pos_.scope()->chdir());
+    out_append->append("\" && ");
+#endif
+  }
+  auto len_post_chdir = out_append->size();
+  if (!EvaluateVariable(out_append, kCommand, pos_.scope(), err))
     return false;
+  // out_append has the chdir in it, waiting, but the correct output
+  // is the empty string if EvaluateVariable() produced the empty string.
+  // In other words, clean up chdir if it's the only thing in out_append.
+  if (!pos_.scope()->chdir().empty() && out_append->size() == len_post_chdir) {
+    out_append->resize(len_pre_chdir);
+  }
+
   if (incl_rsp_file) {
     std::string rspfile_content;
-    if (!EvaluateVariable(&rspfile_content, kRspFileContent, err))
+    if (!EvaluateVariable(&rspfile_content, kRspFileContent, pos_.scope(), err))
       return false;
     if (!rspfile_content.empty()) {
       out_append->append(";rspfile=");
@@ -657,7 +680,7 @@ bool Edge::PrecomputeDepScanInfo(std::string* err) {
   auto get_bool_var = [this, err](const HashedStrView& var,
                                   EdgeEval::EscapeKind escape, bool* out) {
     std::string value;
-    if (!EvaluateVariable(&value, var, err, EdgeEval::kFinalScope, escape))
+    if (!EvaluateVariable(&value, var, pos_.scope(), err, EdgeEval::kFinalScope, escape))
       return false;
     *out = !value.empty();
     return true;
@@ -694,10 +717,11 @@ void Edge::SetRestat() {
 }
 
 bool Edge::EvaluateVariable(std::string* out_append, const HashedStrView& key,
-                            std::string* err, EdgeEval::EvalPhase phase,
+                            Scope* target, std::string* err,
+                            EdgeEval::EvalPhase phase,
                             EdgeEval::EscapeKind escape) {
   EdgeEval eval(this, phase, escape);
-  return eval.EvaluateVariable(out_append, key, err);
+  return eval.EvaluateVariable(out_append, key, target, err);
 }
 
 std::string Edge::GetBindingImpl(const HashedStrView& key,
@@ -705,7 +729,7 @@ std::string Edge::GetBindingImpl(const HashedStrView& key,
                                  EdgeEval::EscapeKind escape) {
   std::string result;
   std::string err;
-  if (!EvaluateVariable(&result, key, &err, phase, escape))
+  if (!EvaluateVariable(&result, key, pos_.scope(), &err, phase, escape))
     Fatal("%s", err.c_str());
   return result;
 }
@@ -898,6 +922,10 @@ void Node::Dump(const char* prefix) const {
   }
 }
 
+GlobalPathStr Node::globalPath() {
+  return scope_->GlobalPath(path_);
+}
+
 static void GetDependencyPathsDfs(Node* node, Node* out,
                                   DepPath& path_till_here,
                                   std::unordered_set<Node*>& dead_ends,
@@ -1019,7 +1047,8 @@ bool ImplicitDepLoader::LoadDepFile(Edge* edge, const string& path,
                           err))
       return false;
 
-    Node* node = state_->GetNode(*i, slash_bits);
+    Node* node = state_->GetNode(edge->pos_.scope()->GlobalPath(*i),
+                                 slash_bits);
     *implicit_dep = node;
     node->AddOutEdgeDepScan(edge);
     CreatePhonyInEdge(node);

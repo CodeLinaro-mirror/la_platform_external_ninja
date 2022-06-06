@@ -32,6 +32,7 @@ struct EdgeEval;
 struct EvalString;
 struct LexedPath;
 struct ScopePosition;
+struct Scope;
 
 /// Search the manifest for the next acceptable point to split the manifest.
 /// Assuming the manifest is syntactically valid to the returned position, the
@@ -170,7 +171,7 @@ void EvaluateBindingInScope(std::string* out_append,
 
 bool EvaluateBindingOnRule(std::string* out_append,
                            StringPiece value,
-                           EdgeEval* edge_eval,
+                           EdgeEval* edge_eval, Scope* target,
                            std::string* err);
 
 /// Used for lexer tests.

@@ -126,20 +126,22 @@ struct State {
   Pool* LookupPoolAtPos(const HashedStrView& pool_name, DeclIndex dfs_location);
 
   /// Creates the node if it doesn't exist. Never returns nullptr. Thread-safe.
+  /// 'path' must be the Scope::GlobalPath(), globally unique.
   /// The hash table should be resized ahead of time for decent performance.
-  Node* GetNode(const HashedStrView& path, uint64_t slash_bits);
+  Node* GetNode(GlobalPathStr path, uint64_t slash_bits);
 
   /// Finds the existing node, returns nullptr if it doesn't exist yet.
+  /// 'path' must be the Scope::GlobalPath(), globally unique.
   /// Thread-safe.
-  Node* LookupNode(const HashedStrView& path) const;
-  Node* LookupNodeAtPos(const HashedStrView& path,
-                        DeclIndex dfs_location) const;
+  Node* LookupNode(GlobalPathStr path) const;
+  Node* LookupNodeAtPos(GlobalPathStr path, DeclIndex dfs_location) const;
 
   Node* SpellcheckNode(StringPiece path);
 
+  /// 'path' must be the Scope::GlobalPath(), globally unique.
   /// These methods aren't thread-safe.
-  void AddIn(Edge* edge, StringPiece path, uint64_t slash_bits);
-  bool AddOut(Edge* edge, StringPiece path, uint64_t slash_bits);
+  void AddIn(Edge* edge, GlobalPathStr path, uint64_t slash_bits);
+  bool AddOut(Edge* edge, GlobalPathStr path, uint64_t slash_bits);
   void AddDefault(Node* node) { defaults_.push_back(node); }
 
   /// Reset state.  Keeps all nodes and edges, but restores them to the

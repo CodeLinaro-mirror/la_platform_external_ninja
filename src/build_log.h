@@ -23,14 +23,16 @@ using namespace std;
 #include "concurrent_hash_map.h"
 #include "timestamp.h"
 #include "util.h"  // uint64_t
+#include "eval_env.h"  // GlobalPathStr
 
+struct State;
 struct Edge;
 
 /// Can answer questions about the manifest for the BuildLog.
 struct BuildLogUser {
   /// Return if a given output is no longer part of the build manifest.
   /// This is only called during recompaction and doesn't have to be fast.
-  virtual bool IsPathDead(StringPiece s) const = 0;
+  virtual bool IsPathDead(GlobalPathStr s) const = 0;
 };
 
 /// Store a log of every command ran for every build.
@@ -77,7 +79,7 @@ struct BuildLog {
   };
 
   /// Lookup a previously-run command by its output path.
-  LogEntry* LookupByOutput(const HashedStrView& path);
+  LogEntry* LookupByOutput(GlobalPathStr path);
 
   /// Serialize an entry into a log file.
   bool WriteEntry(FILE* f, const LogEntry& entry);

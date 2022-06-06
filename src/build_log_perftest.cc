@@ -29,7 +29,7 @@
 const char kTestFilename[] = "BuildLogPerfTest-tempfile";
 
 struct NoDeadPaths : public BuildLogUser {
-  virtual bool IsPathDead(StringPiece) const { return false; }
+  virtual bool IsPathDead(GlobalPathStr) const { return false; }
 };
 
 bool WriteTestData(string* err) {

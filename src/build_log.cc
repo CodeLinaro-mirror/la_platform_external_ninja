@@ -166,7 +166,7 @@ bool BuildLog::RecordCommand(Edge* edge, int start_time, int end_time,
   string command = edge->EvaluateCommand(true);
   uint64_t command_hash = LogEntry::HashCommand(command);
   for (Node* out : edge->outputs_) {
-    const HashedStr& path = out->path_hashed();
+    HashedStrView path = out->globalPath().h;
     LogEntry* log_entry;
     if (LogEntry** i = entries_.Lookup(path)) {
       log_entry = *i;
@@ -475,8 +475,8 @@ bool BuildLog::Load(const string& path, string* err) {
   return true;
 }
 
-BuildLog::LogEntry* BuildLog::LookupByOutput(const HashedStrView& path) {
-  if (LogEntry** i = entries_.Lookup(path))
+BuildLog::LogEntry* BuildLog::LookupByOutput(GlobalPathStr pathG) {
+  if (LogEntry** i = entries_.Lookup(pathG.h))
     return *i;
   return nullptr;
 }
@@ -508,8 +508,8 @@ bool BuildLog::Recompact(const string& path, const BuildLogUser& user,
   Entries new_entries;
   new_entries.reserve(std::max(entries_.size(), entries_.bucket_count()));
 
-  for (const std::pair<HashedStrView, LogEntry*>& pair : entries_) {
-    if (user.IsPathDead(pair.first.str_view()))
+  for (const std::pair<HashedStrView, LogEntry*> pair : entries_) {
+    if (user.IsPathDead(GlobalPathStr{pair.first}))
       continue;
 
     new_entries.insert(pair);

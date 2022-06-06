@@ -36,6 +36,15 @@ struct DepsLogTest : public testing::Test {
     unlink(kTestFilename);
   }
 };
+Node* GetNode(State& state, const string& path) {
+  EXPECT_FALSE(strpbrk(path.c_str(), "/\\"));
+  return state.GetNode(state.root_scope_.GlobalPath(path), 0);
+}
+
+Node* LookupNode(State& state, const string& path) {
+  EXPECT_FALSE(strpbrk(path.c_str(), "/\\"));
+  return state.LookupNode(state.root_scope_.GlobalPath(path));
+}
 
 TEST_F(DepsLogTest, WriteRead) {
   State state1;
@@ -47,16 +56,16 @@ TEST_F(DepsLogTest, WriteRead) {
 
   {
     vector<Node*> deps;
-    deps.push_back(state1.GetNode("foo.h", 0));
-    deps.push_back(state1.GetNode("bar.h", 0));
-    log1.RecordDeps(state1.GetNode("out.o", 0), 1, deps);
+    deps.push_back(GetNode(state1, "foo.h"));
+    deps.push_back(GetNode(state1, "bar.h"));
+    log1.RecordDeps(GetNode(state1, "out.o"), 1, deps);
 
     deps.clear();
-    deps.push_back(state1.GetNode("foo.h", 0));
-    deps.push_back(state1.GetNode("bar2.h", 0));
-    log1.RecordDeps(state1.GetNode("out2.o", 0), 2, deps);
+    deps.push_back(GetNode(state1, "foo.h"));
+    deps.push_back(GetNode(state1, "bar2.h"));
+    log1.RecordDeps(GetNode(state1, "out2.o"), 2, deps);
 
-    DepsLog::Deps* log_deps = log1.GetDeps(state1.GetNode("out.o", 0));
+    DepsLog::Deps* log_deps = log1.GetDeps(GetNode(state1, "out.o"));
     ASSERT_TRUE(log_deps);
     ASSERT_EQ(1, log_deps->mtime);
     ASSERT_EQ(2, log_deps->node_count);
@@ -80,7 +89,7 @@ TEST_F(DepsLogTest, WriteRead) {
   }
 
   // Spot-check the entries in log2.
-  DepsLog::Deps* log_deps = log2.GetDeps(state2.GetNode("out2.o", 0));
+  DepsLog::Deps* log_deps = log2.GetDeps(GetNode(state2, "out2.o"));
   ASSERT_TRUE(log_deps);
   ASSERT_EQ(2, log_deps->mtime);
   ASSERT_EQ(2, log_deps->node_count);
@@ -107,11 +116,11 @@ TEST_F(DepsLogTest, LotsOfDeps) {
     for (int i = 0; i < kNumDeps; ++i) {
       char buf[32];
       sprintf(buf, "file%d.h", i);
-      deps.push_back(state1.GetNode(buf, 0));
+      deps.push_back(GetNode(state1, buf));
     }
-    log1.RecordDeps(state1.GetNode("out.o", 0), 1, deps);
+    log1.RecordDeps(GetNode(state1, "out.o"), 1, deps);
 
-    DepsLog::Deps* log_deps = log1.GetDeps(state1.GetNode("out.o", 0));
+    DepsLog::Deps* log_deps = log1.GetDeps(GetNode(state1, "out.o"));
     ASSERT_EQ(kNumDeps, log_deps->node_count);
   }
 
@@ -122,7 +131,7 @@ TEST_F(DepsLogTest, LotsOfDeps) {
   EXPECT_TRUE(log2.Load(kTestFilename, &state2, &err));
   ASSERT_EQ("", err);
 
-  DepsLog::Deps* log_deps = log2.GetDeps(state2.GetNode("out.o", 0));
+  DepsLog::Deps* log_deps = log2.GetDeps(GetNode(state2, "out.o"));
   ASSERT_EQ(kNumDeps, log_deps->node_count);
 }
 
@@ -139,9 +148,9 @@ TEST_F(DepsLogTest, DoubleEntry) {
     ASSERT_EQ("", err);
 
     vector<Node*> deps;
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("bar.h", 0));
-    log.RecordDeps(state.GetNode("out.o", 0), 1, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "bar.h"));
+    log.RecordDeps(GetNode(state, "out.o"), 1, deps);
     log.Close();
 
     struct stat st;
@@ -162,9 +171,9 @@ TEST_F(DepsLogTest, DoubleEntry) {
     ASSERT_EQ("", err);
 
     vector<Node*> deps;
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("bar.h", 0));
-    log.RecordDeps(state.GetNode("out.o", 0), 1, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "bar.h"));
+    log.RecordDeps(GetNode(state, "out.o"), 1, deps);
     log.Close();
 
     struct stat st;
@@ -195,14 +204,14 @@ TEST_F(DepsLogTest, Recompact) {
     ASSERT_EQ("", err);
 
     vector<Node*> deps;
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("bar.h", 0));
-    log.RecordDeps(state.GetNode("out.o", 0), 1, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "bar.h"));
+    log.RecordDeps(GetNode(state, "out.o"), 1, deps);
 
     deps.clear();
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("baz.h", 0));
-    log.RecordDeps(state.GetNode("other_out.o", 0), 1, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "baz.h"));
+    log.RecordDeps(GetNode(state, "other_out.o"), 1, deps);
 
     log.Close();
 
@@ -226,8 +235,8 @@ TEST_F(DepsLogTest, Recompact) {
     ASSERT_EQ("", err);
 
     vector<Node*> deps;
-    deps.push_back(state.GetNode("foo.h", 0));
-    log.RecordDeps(state.GetNode("out.o", 0), 1, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    log.RecordDeps(GetNode(state, "out.o"), 1, deps);
     log.Close();
 
     struct stat st;
@@ -247,14 +256,14 @@ TEST_F(DepsLogTest, Recompact) {
     string err;
     ASSERT_TRUE(log.Load(kTestFilename, &state, &err));
 
-    Node* out = state.GetNode("out.o", 0);
+    Node* out = GetNode(state, "out.o");
     DepsLog::Deps* deps = log.GetDeps(out);
     ASSERT_TRUE(deps);
     ASSERT_EQ(1, deps->mtime);
     ASSERT_EQ(1, deps->node_count);
     ASSERT_EQ("foo.h", deps->nodes[0]->path());
 
-    Node* other_out = state.GetNode("other_out.o", 0);
+    Node* other_out = GetNode(state, "other_out.o");
     deps = log.GetDeps(other_out);
     ASSERT_TRUE(deps);
     ASSERT_EQ(1, deps->mtime);
@@ -297,14 +306,14 @@ TEST_F(DepsLogTest, Recompact) {
     string err;
     ASSERT_TRUE(log.Load(kTestFilename, &state, &err));
 
-    Node* out = state.GetNode("out.o", 0);
+    Node* out = GetNode(state, "out.o");
     DepsLog::Deps* deps = log.GetDeps(out);
     ASSERT_TRUE(deps);
     ASSERT_EQ(1, deps->mtime);
     ASSERT_EQ(1, deps->node_count);
     ASSERT_EQ("foo.h", deps->nodes[0]->path());
 
-    Node* other_out = state.GetNode("other_out.o", 0);
+    Node* other_out = GetNode(state, "other_out.o");
     deps = log.GetDeps(other_out);
     ASSERT_TRUE(deps);
     ASSERT_EQ(1, deps->mtime);
@@ -331,7 +340,7 @@ TEST_F(DepsLogTest, Recompact) {
 
     //ASSERT_EQ(-1, state.LookupNode("foo.h")->id());
     // The .h files pulled in via deps should no longer have ids either.
-    ASSERT_EQ(-1, state.LookupNode("baz.h")->id());
+    ASSERT_EQ(-1, LookupNode(state, "baz.h")->id());
 
     // The file should have shrunk more.
     struct stat st;
@@ -379,14 +388,14 @@ TEST_F(DepsLogTest, Truncated) {
     ASSERT_EQ("", err);
 
     vector<Node*> deps;
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("bar.h", 0));
-    log.RecordDeps(state.GetNode("out.o", 0), 1, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "bar.h"));
+    log.RecordDeps(GetNode(state, "out.o"), 1, deps);
 
     deps.clear();
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("bar2.h", 0));
-    log.RecordDeps(state.GetNode("out2.o", 0), 2, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "bar2.h"));
+    log.RecordDeps(GetNode(state, "out2.o"), 2, deps);
 
     log.Close();
   }
@@ -439,14 +448,14 @@ TEST_F(DepsLogTest, TruncatedRecovery) {
     ASSERT_EQ("", err);
 
     vector<Node*> deps;
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("bar.h", 0));
-    log.RecordDeps(state.GetNode("out.o", 0), 1, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "bar.h"));
+    log.RecordDeps(GetNode(state, "out.o"), 1, deps);
 
     deps.clear();
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("bar2.h", 0));
-    log.RecordDeps(state.GetNode("out2.o", 0), 2, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "bar2.h"));
+    log.RecordDeps(GetNode(state, "out2.o"), 2, deps);
 
     log.Close();
   }
@@ -469,7 +478,7 @@ TEST_F(DepsLogTest, TruncatedRecovery) {
     err.clear();
 
     // The truncated entry should've been discarded.
-    EXPECT_EQ(NULL, log.GetDeps(state.GetNode("out2.o", 0)));
+    EXPECT_EQ(NULL, log.GetDeps(GetNode(state, "out2.o")));
 
     VirtualFileSystem fs;
     EXPECT_TRUE(log.OpenForWrite(kTestFilename, fs, &err));
@@ -477,9 +486,9 @@ TEST_F(DepsLogTest, TruncatedRecovery) {
 
     // Add a new entry.
     vector<Node*> deps;
-    deps.push_back(state.GetNode("foo.h", 0));
-    deps.push_back(state.GetNode("bar2.h", 0));
-    log.RecordDeps(state.GetNode("out2.o", 0), 3, deps);
+    deps.push_back(GetNode(state, "foo.h"));
+    deps.push_back(GetNode(state, "bar2.h"));
+    log.RecordDeps(GetNode(state, "out2.o"), 3, deps);
 
     log.Close();
   }
@@ -493,7 +502,7 @@ TEST_F(DepsLogTest, TruncatedRecovery) {
     EXPECT_TRUE(log.Load(kTestFilename, &state, &err));
 
     // The truncated entry should exist.
-    DepsLog::Deps* deps = log.GetDeps(state.GetNode("out2.o", 0));
+    DepsLog::Deps* deps = log.GetDeps(GetNode(state, "out2.o"));
     ASSERT_TRUE(deps);
   }
 }
@@ -544,8 +553,8 @@ TEST_F(DepsLogTest, LoadInvalidLog) {
     path_hdr(4), "foo1", ~2, // invalid path ID
   });
   DoLoadInvalidLogTest([](State* state, DepsLog* log) {
-    ASSERT_EQ(0, state->LookupNode("foo0")->id());
-    ASSERT_EQ(nullptr, state->LookupNode("foo1"));
+    ASSERT_EQ(0, LookupNode(*state, "foo0")->id());
+    ASSERT_EQ(nullptr, LookupNode(*state, "foo1"));
   });
 
   write_file({
@@ -555,9 +564,9 @@ TEST_F(DepsLogTest, LoadInvalidLog) {
     path_hdr(4), "foo1", ~1, // node #1
   });
   DoLoadInvalidLogTest([](State* state, DepsLog* log) {
-    ASSERT_EQ(0, state->LookupNode("foo0")->id());
-    ASSERT_EQ(nullptr, log->GetDeps(state->LookupNode("foo0")));
-    ASSERT_EQ(nullptr, state->LookupNode("foo1"));
+    ASSERT_EQ(0, LookupNode(*state, "foo0")->id());
+    ASSERT_EQ(nullptr, log->GetDeps(LookupNode(*state, "foo0")));
+    ASSERT_EQ(nullptr, LookupNode(*state, "foo1"));
   });
 
   write_file({
@@ -567,8 +576,8 @@ TEST_F(DepsLogTest, LoadInvalidLog) {
     path_hdr(4), "foo1", ~1, // node #1
   });
   DoLoadInvalidLogTest([](State* state, DepsLog* log) {
-    ASSERT_EQ(0, state->LookupNode("foo0")->id());
-    ASSERT_EQ(nullptr, state->LookupNode("foo1"));
+    ASSERT_EQ(0, LookupNode(*state, "foo0")->id());
+    ASSERT_EQ(nullptr, LookupNode(*state, "foo1"));
   });
 
   write_file({
@@ -591,15 +600,15 @@ TEST_F(DepsLogTest, LoadInvalidLog) {
     deps_hdr(1), /*node*/2, /*mtime*/9, 0, /*node*/3,
   });
   DoLoadInvalidLogTest([](State* state, DepsLog* log) {
-    ASSERT_EQ(0, state->LookupNode("foo0")->id());
-    ASSERT_EQ(1, state->LookupNode("foo1")->id());
-    ASSERT_EQ(2, state->LookupNode("foo2")->id());
-    ASSERT_EQ(nullptr, state->LookupNode("foo3"));
-    ASSERT_EQ(nullptr, state->LookupNode("foo4"));
+    ASSERT_EQ(0, LookupNode(*state, "foo0")->id());
+    ASSERT_EQ(1, LookupNode(*state, "foo1")->id());
+    ASSERT_EQ(2, LookupNode(*state, "foo2")->id());
+    ASSERT_EQ(nullptr, LookupNode(*state, "foo3"));
+    ASSERT_EQ(nullptr, LookupNode(*state, "foo4"));
 
-    ASSERT_EQ(nullptr, log->GetDeps(state->LookupNode("foo1")));
+    ASSERT_EQ(nullptr, log->GetDeps(LookupNode(*state, "foo1")));
 
-    DepsLog::Deps* deps = log->GetDeps(state->LookupNode("foo2"));
+    DepsLog::Deps* deps = log->GetDeps(LookupNode(*state, "foo2"));
     ASSERT_EQ(5, deps->mtime);
     ASSERT_EQ(1, deps->node_count);
     ASSERT_EQ(1, deps->nodes[0]->id());

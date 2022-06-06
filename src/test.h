@@ -156,6 +156,8 @@ struct VirtualFileSystem : public DiskInterface {
   virtual Status LoadFile(const std::string& path,
                           std::unique_ptr<LoadedFile>* result,
                           std::string* err);
+  virtual bool Getcwd(std::string* out_path, std::string* err);
+  virtual bool Chdir(const std::string dir, std::string* err);
   virtual int RemoveFile(const string& path);
 
   /// An entry for a single in-memory file.
@@ -181,6 +183,10 @@ struct VirtualFileSystem : public DiskInterface {
 
   /// A simple fake timestamp for file operations.
   int now_;
+
+  // Current directory for file operations, should end in '/' if not empty so
+  // the following is always valid: fullpath = cwd_ + path.
+  string cwd_;
 };
 
 struct ScopedTempDir {

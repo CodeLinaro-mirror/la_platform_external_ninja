@@ -38,7 +38,7 @@ struct BuildLogTest : public StateTestWithBuiltinRules, public BuildLogUser {
   virtual void TearDown() {
     unlink(kTestFilename);
   }
-  virtual bool IsPathDead(StringPiece s) const { return false; }
+  virtual bool IsPathDead(GlobalPathStr s) const { return false; }
 };
 
 TEST_F(BuildLogTest, WriteRead) {
@@ -60,9 +60,11 @@ TEST_F(BuildLogTest, WriteRead) {
 
   ASSERT_EQ(2u, log1.entries().size());
   ASSERT_EQ(2u, log2.entries().size());
-  BuildLog::LogEntry* e1 = log1.LookupByOutput("out");
+  BuildLog::LogEntry* e1 =
+      log1.LookupByOutput(state_.root_scope_.GlobalPath("out"));
   ASSERT_TRUE(e1);
-  BuildLog::LogEntry* e2 = log2.LookupByOutput("out");
+  BuildLog::LogEntry* e2 =
+      log2.LookupByOutput(state_.root_scope_.GlobalPath("out"));
   ASSERT_TRUE(e2);
   ASSERT_TRUE(*e1 == *e2);
   ASSERT_EQ(15, e1->start_time);
@@ -111,7 +113,8 @@ TEST_F(BuildLogTest, DoubleEntry) {
   EXPECT_TRUE(log.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
 
-  BuildLog::LogEntry* e = log.LookupByOutput("out");
+  BuildLog::LogEntry* e =
+      log.LookupByOutput(state_.root_scope_.GlobalPath("out"));
   ASSERT_TRUE(e);
   ASSERT_EQ(0x89cd, e->command_hash);
 }
@@ -186,14 +189,15 @@ TEST_F(BuildLogTest, DuplicateVersionHeader) {
   EXPECT_TRUE(log.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
 
-  BuildLog::LogEntry* e = log.LookupByOutput("out");
+  BuildLog::LogEntry* e =
+      log.LookupByOutput(state_.root_scope_.GlobalPath("out"));
   ASSERT_TRUE(e);
   ASSERT_EQ(123, e->start_time);
   ASSERT_EQ(456, e->end_time);
   ASSERT_EQ(456, e->mtime);
   ASSERT_EQ(0x12ab, e->command_hash);
 
-  e = log.LookupByOutput("out2");
+  e = log.LookupByOutput(state_.root_scope_.GlobalPath("out2"));
   ASSERT_TRUE(e);
   ASSERT_EQ(456, e->start_time);
   ASSERT_EQ(789, e->end_time);
@@ -219,14 +223,15 @@ TEST_F(BuildLogTest, VeryLongInputLine) {
   EXPECT_TRUE(log.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
 
-  BuildLog::LogEntry* e = log.LookupByOutput(very_long_path.c_str());
+  BuildLog::LogEntry* e =
+      log.LookupByOutput(state_.root_scope_.GlobalPath(very_long_path));
   ASSERT_TRUE(e);
   ASSERT_EQ(123, e->start_time);
   ASSERT_EQ(456, e->end_time);
   ASSERT_EQ(456, e->mtime);
   ASSERT_EQ(0x1234abcd, e->command_hash);
 
-  e = log.LookupByOutput("out2");
+  e = log.LookupByOutput(state_.root_scope_.GlobalPath("out2"));
   ASSERT_TRUE(e);
   ASSERT_EQ(456, e->start_time);
   ASSERT_EQ(789, e->end_time);
@@ -242,9 +247,11 @@ TEST_F(BuildLogTest, MultiTargetEdge) {
   log.RecordCommand(state_.edges_[0], 21, 22);
 
   ASSERT_EQ(2u, log.entries().size());
-  BuildLog::LogEntry* e1 = log.LookupByOutput("out");
+  BuildLog::LogEntry* e1 =
+      log.LookupByOutput(state_.root_scope_.GlobalPath("out"));
   ASSERT_TRUE(e1);
-  BuildLog::LogEntry* e2 = log.LookupByOutput("out.d");
+  BuildLog::LogEntry* e2 =
+      log.LookupByOutput(state_.root_scope_.GlobalPath("out.d"));
   ASSERT_TRUE(e2);
   ASSERT_EQ("out", e1->output.str());
   ASSERT_EQ("out.d", e2->output.str());
@@ -255,7 +262,7 @@ TEST_F(BuildLogTest, MultiTargetEdge) {
 }
 
 struct BuildLogRecompactTest : public BuildLogTest {
-  virtual bool IsPathDead(StringPiece s) const { return s == "out2"; }
+  virtual bool IsPathDead(GlobalPathStr s) const { return s.h.str_view() == "out2"; }
 };
 
 TEST_F(BuildLogRecompactTest, Recompact) {
@@ -279,8 +286,8 @@ TEST_F(BuildLogRecompactTest, Recompact) {
   EXPECT_TRUE(log2.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
   ASSERT_EQ(2u, log2.entries().size());
-  ASSERT_TRUE(log2.LookupByOutput("out"));
-  ASSERT_TRUE(log2.LookupByOutput("out2"));
+  ASSERT_TRUE(log2.LookupByOutput(state_.root_scope_.GlobalPath("out")));
+  ASSERT_TRUE(log2.LookupByOutput(state_.root_scope_.GlobalPath("out2")));
   // ...and force a recompaction.
   EXPECT_TRUE(log2.OpenForWrite(kTestFilename, *this, &err));
   log2.Close();
@@ -290,8 +297,8 @@ TEST_F(BuildLogRecompactTest, Recompact) {
   EXPECT_TRUE(log3.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
   ASSERT_EQ(1u, log3.entries().size());
-  ASSERT_TRUE(log3.LookupByOutput("out"));
-  ASSERT_FALSE(log3.LookupByOutput("out2"));
+  ASSERT_TRUE(log3.LookupByOutput(state_.root_scope_.GlobalPath("out")));
+  ASSERT_FALSE(log3.LookupByOutput(state_.root_scope_.GlobalPath("out2")));
 }
 
 }  // anonymous namespace

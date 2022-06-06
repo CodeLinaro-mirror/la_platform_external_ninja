@@ -23,8 +23,22 @@
 #include "test.h"
 
 struct DyndepParserTest : public testing::Test {
+  void AssertVfsParse(const char* input,
+                      ManifestParserOptions opts = ManifestParserOptions()) {
+    ManifestParser parser(&state_, &fs_, opts);
+    string err;
+    bool result;
+    EXPECT_TRUE(result = parser.ParseTest(input, &err));
+    if (!result) {
+      err = "AssertVfsParse: ParseTest failed: " + err;
+      Fatal(err.c_str());
+    }
+    ASSERT_EQ("", err);
+    VerifyGraph(state_);
+  }
+
   void AssertParse(const char* input) {
-    DyndepParser parser(&state_, &fs_, &dyndep_file_);
+    DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
     string err;
     EXPECT_TRUE(parser.ParseTest(input, &err));
     ASSERT_EQ("", err);
@@ -45,7 +59,7 @@ struct DyndepParserTest : public testing::Test {
 TEST_F(DyndepParserTest, Empty) {
   const char kInput[] =
 "";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:1: expected 'ninja_dyndep_version = ...'\n", err);
@@ -103,7 +117,7 @@ TEST_F(DyndepParserTest, BlankLineVersionCRLF) {
 TEST_F(DyndepParserTest, VersionUnexpectedEOF) {
   const char kInput[] =
 "ninja_dyndep_version = 1.0";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:1: unexpected EOF\n"
@@ -114,7 +128,7 @@ TEST_F(DyndepParserTest, VersionUnexpectedEOF) {
 TEST_F(DyndepParserTest, UnsupportedVersion0) {
   const char kInput[] =
 "ninja_dyndep_version = 0\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:1: unsupported 'ninja_dyndep_version = 0'\n"
@@ -125,7 +139,7 @@ TEST_F(DyndepParserTest, UnsupportedVersion0) {
 TEST_F(DyndepParserTest, UnsupportedVersion1_1) {
   const char kInput[] =
 "ninja_dyndep_version = 1.1\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:1: unsupported 'ninja_dyndep_version = 1.1'\n"
@@ -137,7 +151,7 @@ TEST_F(DyndepParserTest, DuplicateVersion) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "ninja_dyndep_version = 1\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: unexpected identifier\n", err);
@@ -146,7 +160,7 @@ TEST_F(DyndepParserTest, DuplicateVersion) {
 TEST_F(DyndepParserTest, MissingVersionOtherVar) {
   const char kInput[] =
 "not_ninja_dyndep_version = 1\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:1: expected 'ninja_dyndep_version = ...'\n"
@@ -157,7 +171,7 @@ TEST_F(DyndepParserTest, MissingVersionOtherVar) {
 TEST_F(DyndepParserTest, MissingVersionBuild) {
   const char kInput[] =
 "build out: dyndep\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:1: expected 'ninja_dyndep_version = ...'\n", err);
@@ -166,7 +180,7 @@ TEST_F(DyndepParserTest, MissingVersionBuild) {
 TEST_F(DyndepParserTest, UnexpectedEqual) {
   const char kInput[] =
 "= 1\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:1: unexpected '='\n", err);
@@ -175,7 +189,7 @@ TEST_F(DyndepParserTest, UnexpectedEqual) {
 TEST_F(DyndepParserTest, UnexpectedIndent) {
   const char kInput[] =
 " = 1\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:1: unexpected indent\n", err);
@@ -186,7 +200,7 @@ TEST_F(DyndepParserTest, OutDuplicate) {
 "ninja_dyndep_version = 1\n"
 "build out: dyndep\n"
 "build out: dyndep\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:3: multiple statements for 'out'\n"
@@ -199,7 +213,7 @@ TEST_F(DyndepParserTest, OutDuplicateThroughOther) {
 "ninja_dyndep_version = 1\n"
 "build out: dyndep\n"
 "build otherout: dyndep\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:3: multiple statements for 'otherout'\n"
@@ -211,7 +225,7 @@ TEST_F(DyndepParserTest, NoOutEOF) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: unexpected EOF\n"
@@ -223,7 +237,7 @@ TEST_F(DyndepParserTest, NoOutColon) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build :\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: expected path\n"
@@ -235,7 +249,7 @@ TEST_F(DyndepParserTest, OutNoStatement) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build missing: dyndep\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: no build statement exists for 'missing'\n"
@@ -247,7 +261,7 @@ TEST_F(DyndepParserTest, OutEOF) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build out";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: unexpected EOF\n"
@@ -259,7 +273,7 @@ TEST_F(DyndepParserTest, OutNoRule) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build out:";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: expected build command name 'dyndep'\n"
@@ -271,7 +285,7 @@ TEST_F(DyndepParserTest, OutBadRule) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build out: touch";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: expected build command name 'dyndep'\n"
@@ -283,7 +297,7 @@ TEST_F(DyndepParserTest, BuildEOF) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build out: dyndep";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: unexpected EOF\n"
@@ -295,7 +309,7 @@ TEST_F(DyndepParserTest, ExplicitOut) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build out exp: dyndep\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: explicit outputs not supported\n"
@@ -307,7 +321,7 @@ TEST_F(DyndepParserTest, ExplicitIn) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build out: dyndep exp\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: explicit inputs not supported\n"
@@ -319,7 +333,7 @@ TEST_F(DyndepParserTest, OrderOnlyIn) {
   const char kInput[] =
 "ninja_dyndep_version = 1\n"
 "build out: dyndep ||\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:2: order-only inputs not supported\n"
@@ -332,7 +346,7 @@ TEST_F(DyndepParserTest, BadBinding) {
 "ninja_dyndep_version = 1\n"
 "build out: dyndep\n"
 "  not_restat = 1\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:3: binding is not 'restat'\n"
@@ -346,7 +360,7 @@ TEST_F(DyndepParserTest, RestatTwice) {
 "build out: dyndep\n"
 "  restat = 1\n"
 "  restat = 1\n";
-  DyndepParser parser(&state_, &fs_, &dyndep_file_);
+  DyndepParser parser(&state_, &fs_, &dyndep_file_, &state_.root_scope_);
   string err;
   EXPECT_FALSE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("input:4: unexpected indent\n", err);
@@ -504,6 +518,59 @@ TEST_F(DyndepParserTest, MultipleEdges) {
   }
   {
     DyndepFile::iterator i = dyndep_file_.find(state_.edges_[1]);
+    ASSERT_NE(i, dyndep_file_.end());
+    EXPECT_EQ(true, i->second.restat_);
+    EXPECT_EQ(0u, i->second.implicit_outputs_.size());
+    EXPECT_EQ(0u, i->second.implicit_inputs_.size());
+  }
+}
+
+TEST_F(DyndepParserTest, SubninjaChdir) {
+  // Create the subninja in the chdir 'test-a':
+  fs_.MakeDir("test-a");
+  fs_.Create("test-a/a.ninja",
+             "rule cat\n"
+             "  command = cat $in > $out\n"
+             "build out3: cat in3\n"
+             "build out4: cat in4\n"
+             "build final5: cat out3\n");
+
+  // Parse some more of the top-level build.ninja to pull in the subninja.
+  AssertVfsParse(
+"subninja test-a/a.ninja\n"
+"  chdir = test-a\n"
+"build out2: touch\n");
+  ASSERT_EQ(5u, state_.edges_.size());
+  EXPECT_EQ(0u, state_.edges_[0]->inputs_.size());
+  ASSERT_EQ(2u, state_.edges_[0]->outputs_.size());
+  EXPECT_EQ("out", state_.edges_[0]->outputs_[0]->path());
+  EXPECT_EQ("otherout", state_.edges_[0]->outputs_[1]->path());
+  ASSERT_EQ(1u, state_.edges_[1]->outputs_.size());
+  EXPECT_EQ("out3", state_.edges_[1]->outputs_[0]->path());
+  ASSERT_EQ(1u, state_.edges_[2]->outputs_.size());
+  EXPECT_EQ("out4", state_.edges_[2]->outputs_[0]->path());
+  ASSERT_EQ(1u, state_.edges_[3]->outputs_.size());
+  EXPECT_EQ("final5", state_.edges_[3]->outputs_[0]->path());
+  ASSERT_EQ(1u, state_.edges_[4]->outputs_.size());
+  EXPECT_EQ("out2", state_.edges_[4]->outputs_[0]->path());
+
+  // AssertParse() here validates the dyndep file.
+  ASSERT_NO_FATAL_FAILURE(AssertParse(
+"ninja_dyndep_version = 1\n"
+"build out: dyndep\n"
+"build out2: dyndep\n"
+"  restat = 1\n"));
+
+  EXPECT_EQ(2u, dyndep_file_.size());
+  {
+    DyndepFile::iterator i = dyndep_file_.find(state_.edges_[0]);
+    ASSERT_NE(i, dyndep_file_.end());
+    EXPECT_EQ(false, i->second.restat_);
+    EXPECT_EQ(0u, i->second.implicit_outputs_.size());
+    EXPECT_EQ(0u, i->second.implicit_inputs_.size());
+  }
+  {
+    DyndepFile::iterator i = dyndep_file_.find(state_.edges_[4]);
     ASSERT_NE(i, dyndep_file_.end());
     EXPECT_EQ(true, i->second.restat_);
     EXPECT_EQ(0u, i->second.implicit_outputs_.size());

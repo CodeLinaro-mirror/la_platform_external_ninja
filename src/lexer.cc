@@ -1909,11 +1909,11 @@ void EvaluateBindingInScope(std::string* out_append, StringPiece value,
 }
 
 bool EvaluateBindingOnRule(std::string* out_append, StringPiece value,
-                           EdgeEval* edge_eval, std::string* err) {
+                           EdgeEval* edge_eval, Scope* target, std::string* err) {
   bool result = true;
   EvaluateBinding(out_append, value,
-      [out_append, edge_eval, &result, err](const HashedStrView& var) {
-    result = result && edge_eval->EvaluateVariable(out_append, var, err);
+      [out_append, edge_eval, &result, target, err](const HashedStrView& var) {
+    result = result && edge_eval->EvaluateVariable(out_append, var, target, err);
   });
   return result;
 }

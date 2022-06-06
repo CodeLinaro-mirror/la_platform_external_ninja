@@ -30,8 +30,24 @@ struct ParserTest : public testing::Test {
     VerifyGraph(state);
   }
 
+  std::string VerifyCwd(VirtualFileSystem &f_) {
+    std::string result;
+    std::string err;
+    EXPECT_TRUE(f_.Getcwd(&result, &err));
+    EXPECT_EQ("", err);
+    return result;
+  }
+
   State state;
   VirtualFileSystem fs_;
+
+  Node* GetNode(const string& path) {
+    return state.GetNode(state.root_scope_.GlobalPath(path), 0);
+  }
+
+  Node* LookupNode(const string& path) {
+    return state.LookupNode(state.root_scope_.GlobalPath(path));
+  }
 };
 
 TEST_F(ParserTest, Empty) {
@@ -84,7 +100,7 @@ TEST_F(ParserTest, IgnoreIndentedComments) {
   ASSERT_EQ(2u, state.root_scope_.GetRules().size());
   const Rule* rule = state.root_scope_.GetRules().begin()->second;
   EXPECT_EQ("cat", rule->name());
-  Edge* edge = state.GetNode("result", 0)->in_edge();
+  Edge* edge = GetNode("result")->in_edge();
   EXPECT_TRUE(edge->IsRestat());
   EXPECT_FALSE(edge->IsGenerator());
 }
@@ -236,7 +252,7 @@ TEST_F(ParserTest, EscapeSpaces) {
 "  command = something\n"
 "build foo$ bar: spaces $$one two$$$ three\n"
 ));
-  EXPECT_TRUE(state.LookupNode("foo bar"));
+  EXPECT_TRUE(LookupNode("foo bar"));
   EXPECT_EQ(state.edges_[0]->outputs_[0]->path(), "foo bar");
   EXPECT_EQ(state.edges_[0]->inputs_[0]->path(), "$one");
   EXPECT_EQ(state.edges_[0]->inputs_[1]->path(), "two$ three");
@@ -251,10 +267,10 @@ TEST_F(ParserTest, CanonicalizeFile) {
 "build in/1: cat\n"
 "build in/2: cat\n"));
 
-  EXPECT_TRUE(state.LookupNode("in/1"));
-  EXPECT_TRUE(state.LookupNode("in/2"));
-  EXPECT_FALSE(state.LookupNode("in//1"));
-  EXPECT_FALSE(state.LookupNode("in//2"));
+  EXPECT_TRUE(LookupNode("in/1"));
+  EXPECT_TRUE(LookupNode("in/2"));
+  EXPECT_FALSE(LookupNode("in//1"));
+  EXPECT_FALSE(LookupNode("in//2"));
 }
 
 #ifdef _WIN32
@@ -266,14 +282,14 @@ TEST_F(ParserTest, CanonicalizeFileBackslashes) {
 "build in\\1: cat\n"
 "build in\\2: cat\n"));
 
-  Node* node = state.LookupNode("in/1");;
+  Node* node = LookupNode("in/1");;
   EXPECT_TRUE(node);
   EXPECT_EQ(1, node->slash_bits());
-  node = state.LookupNode("in/2");
+  node = LookupNode("in/2");
   EXPECT_TRUE(node);
   EXPECT_EQ(1, node->slash_bits());
-  EXPECT_FALSE(state.LookupNode("in//1"));
-  EXPECT_FALSE(state.LookupNode("in//2"));
+  EXPECT_FALSE(LookupNode("in//1"));
+  EXPECT_FALSE(LookupNode("in//2"));
 }
 #endif
 
@@ -284,8 +300,8 @@ TEST_F(ParserTest, PathVariables) {
 "dir = out\n"
 "build $dir/exe: cat src\n"));
 
-  EXPECT_FALSE(state.LookupNode("$dir/exe"));
-  EXPECT_TRUE(state.LookupNode("out/exe"));
+  EXPECT_FALSE(LookupNode("$dir/exe"));
+  EXPECT_TRUE(LookupNode("out/exe"));
 }
 
 TEST_F(ParserTest, CanonicalizePaths) {
@@ -294,10 +310,10 @@ TEST_F(ParserTest, CanonicalizePaths) {
 "  command = cat $in > $out\n"
 "build ./out.o: cat ./bar/baz/../foo.cc\n"));
 
-  EXPECT_FALSE(state.LookupNode("./out.o"));
-  EXPECT_TRUE(state.LookupNode("out.o"));
-  EXPECT_FALSE(state.LookupNode("./bar/baz/../foo.cc"));
-  EXPECT_TRUE(state.LookupNode("bar/foo.cc"));
+  EXPECT_FALSE(LookupNode("./out.o"));
+  EXPECT_TRUE(LookupNode("out.o"));
+  EXPECT_FALSE(LookupNode("./bar/baz/../foo.cc"));
+  EXPECT_TRUE(LookupNode("bar/foo.cc"));
 }
 
 #ifdef _WIN32
@@ -310,19 +326,19 @@ TEST_F(ParserTest, CanonicalizePathsBackslashes) {
 "build .\\out3.o: cat .\\bar\\baz\\..\\foo3.cc\n"
 ));
 
-  EXPECT_FALSE(state.LookupNode("./out.o"));
-  EXPECT_FALSE(state.LookupNode(".\\out2.o"));
-  EXPECT_FALSE(state.LookupNode(".\\out3.o"));
-  EXPECT_TRUE(state.LookupNode("out.o"));
-  EXPECT_TRUE(state.LookupNode("out2.o"));
-  EXPECT_TRUE(state.LookupNode("out3.o"));
-  EXPECT_FALSE(state.LookupNode("./bar/baz/../foo.cc"));
-  EXPECT_FALSE(state.LookupNode(".\\bar/baz\\..\\foo.cc"));
-  EXPECT_FALSE(state.LookupNode(".\\bar/baz\\..\\foo3.cc"));
-  Node* node = state.LookupNode("bar/foo.cc");
+  EXPECT_FALSE(LookupNode("./out.o"));
+  EXPECT_FALSE(LookupNode(".\\out2.o"));
+  EXPECT_FALSE(LookupNode(".\\out3.o"));
+  EXPECT_TRUE(LookupNode("out.o"));
+  EXPECT_TRUE(LookupNode("out2.o"));
+  EXPECT_TRUE(LookupNode("out3.o"));
+  EXPECT_FALSE(LookupNode("./bar/baz/../foo.cc"));
+  EXPECT_FALSE(LookupNode(".\\bar/baz\\..\\foo.cc"));
+  EXPECT_FALSE(LookupNode(".\\bar/baz\\..\\foo3.cc"));
+  Node* node = LookupNode("bar/foo.cc");
   EXPECT_TRUE(node);
   EXPECT_EQ(0, node->slash_bits());
-  node = state.LookupNode("bar/foo3.cc");
+  node = LookupNode("bar/foo3.cc");
   EXPECT_TRUE(node);
   EXPECT_EQ(1, node->slash_bits());
 }
@@ -389,7 +405,7 @@ TEST_F(ParserTest, PhonySelfReferenceIgnored) {
 "build a: phony a\n"
 ));
 
-  Node* node = state.LookupNode("a");
+  Node* node = LookupNode("a");
   Edge* edge = node->in_edge();
   ASSERT_TRUE(edge->inputs_.empty());
 }
@@ -404,7 +420,7 @@ TEST_F(ParserTest, PhonySelfReferenceKept) {
   EXPECT_TRUE(parser.ParseTest(kInput, &err));
   EXPECT_EQ("", err);
 
-  Node* node = state.LookupNode("a");
+  Node* node = LookupNode("a");
   Edge* edge = node->in_edge();
   ASSERT_EQ(edge->inputs_.size(), 1);
   ASSERT_EQ(edge->inputs_[0], node);
@@ -928,9 +944,9 @@ TEST_F(ParserTest, SubNinja) {
   ASSERT_EQ(1u, fs_.files_read_.size());
 
   EXPECT_EQ("test.ninja", fs_.files_read_[0]);
-  EXPECT_TRUE(state.LookupNode("some_dir/outer"));
+  EXPECT_TRUE(LookupNode("some_dir/outer"));
   // Verify our builddir setting is inherited.
-  EXPECT_TRUE(state.LookupNode("some_dir/inner"));
+  EXPECT_TRUE(LookupNode("some_dir/inner"));
 
   ASSERT_EQ(3u, state.edges_.size());
   EXPECT_EQ("varref outer", state.edges_[0]->EvaluateCommand());
@@ -938,14 +954,215 @@ TEST_F(ParserTest, SubNinja) {
   EXPECT_EQ("varref outer", state.edges_[2]->EvaluateCommand());
 }
 
-TEST_F(ParserTest, MissingSubNinja) {
+TEST_F(ParserTest, SubNinjaChdir) {
+  EXPECT_TRUE(fs_.MakeDir("a"));
+  fs_.Create("a/foo.ninja",
+    "var = inner\n"
+    "rule innerrule\n"
+    "  command = foo $var\n"
+    "build $builddir/inner: innerrule\n"
+    "build inner2: innerrule\n");
+
+  ASSERT_NO_FATAL_FAILURE(AssertParse(
+"builddir = a/\n"
+"rule varref\n"
+"  command = varref $var\n"
+"var = outer\n"
+"build $builddir/outer: varref\n"
+"subninja a/foo.ninja\n"
+"  chdir = a\n"
+"build $builddir/outer2: varref\n"));
+  ASSERT_EQ(1u, fs_.files_read_.size());
+  ASSERT_EQ("/", VerifyCwd(fs_));
+
+  EXPECT_EQ("a/foo.ninja", fs_.files_read_[0]);
+  HashedStrView outer("a/outer");
+  EXPECT_TRUE(state.LookupNode(GlobalPathStr{outer}));
+  HashedStrView outer2("a/outer2");
+  EXPECT_TRUE(state.LookupNode(GlobalPathStr{outer2}));
+  // Verify builddir setting is *not* inherited.
+  HashedStrView inner("a/inner");
+  EXPECT_FALSE(state.LookupNode(GlobalPathStr{inner}));
+  // Verify that the chdir "a/" is always concatenated with the filename.
+  // (in this case, the filename is /inner because a/foo.ninja says
+  // "build $bulddir/inner" and this validates that builddir from
+  // the unnamed top-level .ninja file is not visible in a/foo.ninja)
+  HashedStrView innerslash("a/" "/inner");
+  EXPECT_TRUE(state.LookupNode(GlobalPathStr{innerslash}));
+  HashedStrView inner2("a/inner2");
+  Node* inner2node = state.LookupNode(GlobalPathStr{inner2});
+  EXPECT_TRUE(inner2node);
+  HashedStrView slashinner("/inner");
+  EXPECT_FALSE(state.LookupNode(GlobalPathStr{slashinner}));
+
+  // Verify command includes correct chdir for subninja chdir.
+  Edge* edge = inner2node->in_edge();
+  EXPECT_TRUE(edge);
+#ifdef _WIN32
+  EXPECT_EQ(NINJA_WIN32_CD_DELIM "a/" NINJA_WIN32_CD_DELIM "foo inner", edge->EvaluateCommand());
+#else /* _WIN32 */
+  EXPECT_EQ("cd \"a/\" && foo inner", edge->EvaluateCommand());
+#endif /* _WIN32 */
+}
+
+TEST_F(ParserTest, SubNinjaChdirNoSuchFile) {
+  EXPECT_TRUE(fs_.MakeDir("a"));
+  fs_.Create("a/foo.ninja",
+    "var = inner\n"
+    "rule innerrule\n"
+    "  command = foo $var\n"
+    "build $builddir/inner: innerrule\n"
+    "build inner2: innerrule\n");
+
   ManifestParser parser(&state, &fs_);
   string err;
-  EXPECT_FALSE(parser.ParseTest("subninja foo.ninja\n", &err));
-  EXPECT_EQ("input:1: loading 'foo.ninja': No such file or directory\n"
-            "subninja foo.ninja\n"
-            "                  ^ near here"
-            , err);
+  EXPECT_FALSE(parser.ParseTest(
+"builddir = a/\n"
+"rule varref\n"
+"  command = varref $var\n"
+"var = outer\n"
+"build $builddir/outer: varref\n"
+"subninja foo.ninja\n"  // NOTE: deliberately wrong, not "a/foo.ninja"
+"  chdir = a\n"
+"build $builddir/outer2: varref\n", &err));
+  EXPECT_EQ(err,
+      "input:6: loading 'foo.ninja': No such file or directory\n"
+      "subninja foo.ninja\n"
+      "                  ^ near here");
+  ASSERT_EQ(1u, fs_.files_read_.size());
+  ASSERT_EQ("/", VerifyCwd(fs_));
+}
+
+TEST_F(ParserTest, TwoChdirs) {
+  fs_.MakeDir("test-a");
+  fs_.Create("test-a/a.ninja",
+    "rule cat\n"
+    "  command = cat $in > $out\n"
+    "build out2: cat in1\n"
+    "build out1: cat in2\n"
+    "build final: cat out1\n"
+    "default final\n");
+
+  fs_.MakeDir("test-b");
+  fs_.Create("test-b/b.ninja",
+    "rule cat\n"
+    "  command = cat $in > $out\n"
+    "build out2: cat in1\n"
+    "build out3: cat in2\n"
+    "build final: cat out3\n"
+    "default final\n");
+
+  // Verify that duplicate 'default final' lines in subninjas do not conflict.
+  // Verify that 'default final' in a chdir is ignored.
+  ASSERT_NO_FATAL_FAILURE(AssertParse(
+"subninja test-a/a.ninja\n"
+"    chdir = test-a\n"
+"\n"
+"rule pipe-through-test-a\n"
+"    command = $in | test-a/final > $out\n"
+"\n"
+"build foo: pipe-through-test-a | test-b/final\n"
+"default foo\n"
+"\n"
+"subninja test-b/b.ninja\n"
+"    chdir = test-b\n"
+  ));
+  EXPECT_EQ("/", VerifyCwd(fs_));  // Verify cwd was restored
+
+  // Verify edge command includes correct 'cd test-a'
+  Edge* edge = GetNode("test-a/final")->in_edge();
+#if _WIN32
+  EXPECT_EQ(NINJA_WIN32_CD_DELIM "test-a/" NINJA_WIN32_CD_DELIM
+            "cat out1 > final", edge->EvaluateCommand());
+#else
+  EXPECT_EQ("cd \"test-a/\" && cat out1 > final", edge->EvaluateCommand());
+#endif
+
+  // Verify edge command includes correct 'cd test-b'
+  edge = GetNode("test-b/final")->in_edge();
+#if _WIN32
+  EXPECT_EQ(NINJA_WIN32_CD_DELIM "test-b/" NINJA_WIN32_CD_DELIM
+            "cat out3 > final", edge->EvaluateCommand());
+#else
+  EXPECT_EQ("cd \"test-b/\" && cat out3 > final", edge->EvaluateCommand());
+#endif
+}
+
+TEST_F(ParserTest, SubNinjaErrors) {
+  {
+    // Test chdir failure.
+    VirtualFileSystem fs;
+    fs.MakeDir("test-a");
+    fs.Create("test-a/a.ninja",
+      "rule cat\n"
+      "  command = cat $in > $out\n"
+      "build out2: cat in1\n"
+      "build out1: cat in2\n"
+      "build final: cat out1\n");
+    State local_state;
+    ManifestParser parser(&local_state, &fs);
+    string err;
+    EXPECT_FALSE(parser.ParseTest(
+"rule pipe-through-test-a\n"
+"    command = $in | test-a/final > $out\n"
+"\n"
+"build foo: pipe-through-test-a | test-a/final\n"
+"\n"
+"default foo\n"
+"\n"
+"subninja test-b/a.ninja\n"
+"    chdir = test-b\n", &err));
+    EXPECT_EQ(
+        "input:8: loading 'test-b/a.ninja': No such file or directory\n"
+        "subninja test-b/a.ninja\n"
+        "                       ^ near here", err);
+    EXPECT_EQ("/", VerifyCwd(fs));  // Verify cwd was restored
+  }
+
+  {
+    // Test that an error in a.ninja flows through the chdir.
+    // Verify that 'unknown target' includes the chdir in the message.
+    VirtualFileSystem fs;
+    fs.MakeDir("test-a");
+    fs.Create("test-a/a.ninja",
+      "rule cat\n"
+      "  command = cat $in > $out\n"
+      "build out2: cat in1\n"
+      "build out1: cat in2\n"
+      "build final: cat out1\n"
+      "default somethingweird\n");
+    ManifestParserOptions parser_opts;
+    parser_opts.dupe_edge_action_ = kDupeEdgeActionError;
+    State local_state;
+    ManifestParser parser(&local_state, &fs, parser_opts);
+    string err;
+    EXPECT_FALSE(parser.ParseTest(
+"rule pipe-through-test-a\n"
+"    command = $in | test-a/final > $out\n"
+"\n"
+"build foo: pipe-through-test-a | test-a/final\n"
+"\n"
+"default foo\n"
+"\n"
+"subninja test-a/a.ninja\n"
+"    chdir = test-a\n", &err));
+    EXPECT_EQ("test-a/a.ninja:6: unknown target 'somethingweird'\n"
+              "default somethingweird\n"
+              "                      ^ near here"
+              , err);
+    EXPECT_EQ("/", VerifyCwd(fs));  // Verify cwd was restored
+  }
+
+  {
+    // Test missing subninja.
+    ManifestParser parser(&state, &fs_);
+    string err;
+    EXPECT_FALSE(parser.ParseTest("subninja foo.ninja\n", &err));
+    EXPECT_EQ("input:1: loading 'foo.ninja': No such file or directory\n"
+              "subninja foo.ninja\n"
+              "                  ^ near here"
+              , err);
+  }
 }
 
 TEST_F(ParserTest, DuplicateRuleInDifferentSubninjas) {
@@ -983,15 +1200,48 @@ TEST_F(ParserTest, Include) {
   EXPECT_EQ("inner", state.root_scope_.LookupVariable("var"));
 }
 
-TEST_F(ParserTest, BrokenInclude) {
+TEST_F(ParserTest, IncludeErrors) {
   fs_.Create("include.ninja", "build\n");
-  ManifestParser parser(&state, &fs_);
-  string err;
-  EXPECT_FALSE(parser.ParseTest("include include.ninja\n", &err));
-  EXPECT_EQ("include.ninja:1: expected path\n"
-            "build\n"
-            "     ^ near here"
-            , err);
+  {
+    ManifestParser parser(&state, &fs_);
+    string err;
+    EXPECT_FALSE(parser.ParseTest("include include.ninja\n", &err));
+    EXPECT_EQ("include.ninja:1: expected path\n"
+              "build\n"
+              "     ^ near here"
+              , err);
+  }
+  {
+    ManifestParser parser(&state, &fs_);
+    string err;
+    EXPECT_FALSE(parser.ParseTest(
+        "include include.ninja\n"
+        "  chdir = somedir\n", &err));
+    EXPECT_EQ("input:2: indent after 'include' line is invalid.\n"
+              , err);
+  }
+  {
+    ManifestParser parser(&state, &fs_);
+    string err;
+    EXPECT_FALSE(parser.ParseTest(
+        "subninja include.ninja\n"
+        "  somedir = somedir\n", &err));
+    EXPECT_EQ("input:2: only 'chdir =' is allowed after 'subninja' line.\n"
+              "  somedir = somedir\n"
+              "  ^ near here"
+              , err);
+  }
+  {
+    ManifestParser parser(&state, &fs_);
+    string err;
+    EXPECT_FALSE(parser.ParseTest(
+        "subninja include.ninja\n"
+        "  chdir dir\n", &err));
+    EXPECT_EQ("input:2: expected '=', got identifier\n"
+              "  chdir dir\n"
+              "        ^ near here"
+              , err);
+  }
 }
 
 TEST_F(ParserTest, Implicit) {
@@ -1000,7 +1250,7 @@ TEST_F(ParserTest, Implicit) {
 "  command = cat $in > $out\n"
 "build foo: cat bar | baz\n"));
 
-  Edge* edge = state.LookupNode("foo")->in_edge();
+  Edge* edge = LookupNode("foo")->in_edge();
   ASSERT_TRUE(edge->is_implicit(1));
 }
 
@@ -1009,7 +1259,7 @@ TEST_F(ParserTest, OrderOnly) {
 "rule cat\n  command = cat $in > $out\n"
 "build foo: cat bar || baz\n"));
 
-  Edge* edge = state.LookupNode("foo")->in_edge();
+  Edge* edge = LookupNode("foo")->in_edge();
   ASSERT_TRUE(edge->is_order_only(1));
 }
 
@@ -1018,7 +1268,7 @@ TEST_F(ParserTest, Validations) {
 "rule cat\n  command = cat $in > $out\n"
 "build foo: cat bar |@ baz\n"));
 
-  Edge* edge = state.LookupNode("foo")->in_edge();
+  Edge* edge = LookupNode("foo")->in_edge();
   ASSERT_EQ(edge->validations_.size(), 1);
   EXPECT_EQ(edge->validations_[0]->path(), "baz");
 }
@@ -1029,7 +1279,7 @@ TEST_F(ParserTest, ImplicitOutput) {
 "  command = cat $in > $out\n"
 "build foo | imp: cat bar\n"));
 
-  Edge* edge = state.LookupNode("imp")->in_edge();
+  Edge* edge = LookupNode("imp")->in_edge();
   ASSERT_EQ(edge->outputs_.size(), 2);
   EXPECT_TRUE(edge->is_implicit_out(1));
 }
@@ -1040,7 +1290,7 @@ TEST_F(ParserTest, ImplicitOutputEmpty) {
 "  command = cat $in > $out\n"
 "build foo | : cat bar\n"));
 
-  Edge* edge = state.LookupNode("foo")->in_edge();
+  Edge* edge = LookupNode("foo")->in_edge();
   ASSERT_EQ(edge->outputs_.size(), 1);
   EXPECT_FALSE(edge->is_implicit_out(0));
 }
@@ -1051,7 +1301,7 @@ TEST_F(ParserTest, ImplicitOutputDupe) {
 "  command = cat $in > $out\n"
 "build foo baz | foo baq foo: cat bar\n"));
 
-  Edge* edge = state.LookupNode("foo")->in_edge();
+  Edge* edge = LookupNode("foo")->in_edge();
   ASSERT_EQ(edge->outputs_.size(), 3);
   EXPECT_FALSE(edge->is_implicit_out(0));
   EXPECT_FALSE(edge->is_implicit_out(1));
@@ -1064,7 +1314,7 @@ TEST_F(ParserTest, ImplicitOutputDupes) {
 "  command = cat $in > $out\n"
 "build foo foo foo | foo foo foo foo: cat bar\n"));
 
-  Edge* edge = state.LookupNode("foo")->in_edge();
+  Edge* edge = LookupNode("foo")->in_edge();
   ASSERT_EQ(edge->outputs_.size(), 1);
   EXPECT_FALSE(edge->is_implicit_out(0));
 }
@@ -1149,7 +1399,7 @@ TEST_F(ParserTest, DyndepNotSpecified) {
 "rule cat\n"
 "  command = cat $in > $out\n"
 "build result: cat in\n"));
-  Edge* edge = state.GetNode("result", 0)->in_edge();
+  Edge* edge = GetNode("result")->in_edge();
   ASSERT_FALSE(edge->dyndep_);
 }
 
@@ -1172,7 +1422,7 @@ TEST_F(ParserTest, DyndepExplicitInput) {
 "  command = cat $in > $out\n"
 "build result: cat in\n"
 "  dyndep = in\n"));
-  Edge* edge = state.GetNode("result", 0)->in_edge();
+  Edge* edge = GetNode("result")->in_edge();
   ASSERT_TRUE(edge->dyndep_);
   EXPECT_TRUE(edge->dyndep_->dyndep_pending());
   EXPECT_EQ(edge->dyndep_->path(), "in");
@@ -1184,7 +1434,7 @@ TEST_F(ParserTest, DyndepImplicitInput) {
 "  command = cat $in > $out\n"
 "build result: cat in | dd\n"
 "  dyndep = dd\n"));
-  Edge* edge = state.GetNode("result", 0)->in_edge();
+  Edge* edge = GetNode("result")->in_edge();
   ASSERT_TRUE(edge->dyndep_);
   EXPECT_TRUE(edge->dyndep_->dyndep_pending());
   EXPECT_EQ(edge->dyndep_->path(), "dd");
@@ -1196,7 +1446,7 @@ TEST_F(ParserTest, DyndepOrderOnlyInput) {
 "  command = cat $in > $out\n"
 "build result: cat in || dd\n"
 "  dyndep = dd\n"));
-  Edge* edge = state.GetNode("result", 0)->in_edge();
+  Edge* edge = GetNode("result")->in_edge();
   ASSERT_TRUE(edge->dyndep_);
   EXPECT_TRUE(edge->dyndep_->dyndep_pending());
   EXPECT_EQ(edge->dyndep_->path(), "dd");
@@ -1208,7 +1458,7 @@ TEST_F(ParserTest, DyndepRuleInput) {
 "  command = cat $in > $out\n"
 "  dyndep = $in\n"
 "build result: cat in\n"));
-  Edge* edge = state.GetNode("result", 0)->in_edge();
+  Edge* edge = GetNode("result")->in_edge();
   ASSERT_TRUE(edge->dyndep_);
   EXPECT_TRUE(edge->dyndep_->dyndep_pending());
   EXPECT_EQ(edge->dyndep_->path(), "in");

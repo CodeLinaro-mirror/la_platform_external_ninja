@@ -37,12 +37,10 @@ struct Cleaner {
   /// Clean the given @a target and all the file built for it.
   /// @return non-zero if an error occurs.
   int CleanTarget(Node* target);
-  /// Clean the given target @a target.
-  /// @return non-zero if an error occurs.
-  int CleanTarget(const char* target);
   /// Clean the given target @a targets.
+  /// Target names must match the Scope::GlobalPath() of the target.
   /// @return non-zero if an error occurs.
-  int CleanTargets(int target_count, char* targets[]);
+  int CleanTargets(int target_count, const char* targets[]);
 
   /// Clean all built files, except for files created by generator rules.
   /// @param generator If set, also clean files created by generator rules.
@@ -79,7 +77,7 @@ struct Cleaner {
   void Report(const string& path);
 
   /// Remove the given @a path file only if it has not been already removed.
-  void Remove(const string& path);
+  void Remove(GlobalPathStr path);
   /// @return whether the given @a path has already been removed.
   bool IsAlreadyRemoved(const string& path);
   /// Remove the depfile and rspfile for an Edge.

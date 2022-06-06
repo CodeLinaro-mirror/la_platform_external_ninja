@@ -140,8 +140,25 @@ private:
   std::string final_value_;
 };
 
+/// GlobalPathStr is 'just a HashedStrView' but enforces that the value *must*
+/// be the result of calling Scope::GlobalPath().
+struct GlobalPathStr {
+  /// TODO: Change 'h' to something more readable.
+  HashedStrView h;
+};
+
 struct Scope {
-  Scope(ScopePosition parent) : parent_(parent) {}
+  // Simple constructor for a new Scope.
+  Scope(ScopePosition parent)
+      : parent_(parent)
+      , chdirParent_(nullptr)
+      , chdir_(parent.scope ? parent.scope->chdir_ : "") {}
+
+  // Constructor which creates a new Scope that:
+  //  - Does not search a parent ScopePosition when evaluating variables.
+  //  - Does know the parent Scope for traversing the directory tree.
+  Scope(Scope* chdirParent, std::string chdir)
+      : parent_(nullptr), chdirParent_(chdirParent), chdir_(chdir) {}
 
   /// Preallocate space in the hash tables so adding bindings and rules is more
   /// efficient.
@@ -193,10 +210,40 @@ struct Scope {
 
   ScopePosition GetCurrentEndOfScope() { return { this, pos_ }; }
 
+  /// Given a canonicalized path in the current scope, this returns the
+  /// globally unique path (used to uniquely identify a Node or Edge)
+  /// - If Scope is *not* inside a 'subninja chdir' then GlobalPath() returns
+  ///   path unchanged
+  /// - Inside a 'subninja chdir' GlobalPath() returns a path including chdir_
+  GlobalPathStr GlobalPath(const HashedStrView& path);
+
+  // If the path is ever changed, the HashedStrView must be reset in the cache
+  void resetGlobalPath(const std::string& path);
+
+  const std::string& chdir() const { return chdir_; }
+
+  /// ResolveChdir prefixes a path with as many chdir() prefixes as needed to
+  /// make it relative to this Scope. The GlobalPath() is useful for uniquely
+  /// identifying a Node, but when building, a relative path is needed.
+  ///
+  /// The Node::path() used for the build in the subninja chdir is not
+  /// changed by ResolveChdir(). Only the Node::path() used by the parent Scope
+  /// when it wants the product of the child subninja chdir will need to know
+  /// a relative path to where the build product can be found.
+  std::string ResolveChdir(Scope* child, std::string path);
+
 private:
   /// The position of this scope within its parent scope.
   /// (ScopePosition::parent will be nullptr for the root scope.)
   ScopePosition parent_;
+
+  // A Scope with chdir_ set to non-empty must not allow variable evaluation
+  // to continue beyond its scope, so parent_ (above) is set to nullptr.
+  //
+  // This stores a chdirParent_ for traversing the directory tree.
+  Scope* const chdirParent_ = nullptr;
+
+  const std::string chdir_ = "";
 
   DeclIndex pos_ = 0;
 
@@ -206,6 +253,14 @@ private:
   /// scope has a rule of a given name, a lookup for that name can still find a
   /// parent scope's rule if the search position comes before this scope's rule.
   std::unordered_map<HashedStrView, Rule*> rules_;
+
+  std::mutex global_paths_mutex_;
+
+  /// HashedStrView holds a reference to some bytes in a file previously loaded
+  /// but that optimization breaks when GlobalPath() goes to include the chdir_
+  /// GlobalPath() allocates space here and returns a reference to this.
+  std::unordered_map<HashedStrView, std::shared_ptr<HashedStr>>
+      global_paths_;
 };
 
 #endif  // NINJA_EVAL_ENV_H_

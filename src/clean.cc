@@ -53,7 +53,8 @@ void Cleaner::Report(const string& path) {
     printf("Remove %s\n", path.c_str());
 }
 
-void Cleaner::Remove(const string& path) {
+void Cleaner::Remove(GlobalPathStr pathG) {
+  string path(pathG.h.data());
   if (!IsAlreadyRemoved(path)) {
     removed_.insert(path);
     if (config_.dry_run) {
@@ -77,11 +78,11 @@ bool Cleaner::IsAlreadyRemoved(const string& path) {
 void Cleaner::RemoveEdgeFiles(Edge* edge) {
   string depfile = edge->GetUnescapedDepfile();
   if (!depfile.empty())
-    Remove(depfile);
+    Remove(edge->pos_.scope()->GlobalPath(depfile));
 
   string rspfile = edge->GetUnescapedRspfile();
   if (!rspfile.empty())
-    Remove(rspfile);
+    Remove(edge->pos_.scope()->GlobalPath(rspfile));
 }
 
 void Cleaner::PrintHeader() {
@@ -115,7 +116,7 @@ int Cleaner::CleanAll(bool generator) {
       continue;
     for (vector<Node*>::iterator out_node = (*e)->outputs_.begin();
          out_node != (*e)->outputs_.end(); ++out_node) {
-      Remove((*out_node)->path());
+      Remove((*out_node)->globalPath());
     }
 
     RemoveEdgeFiles(*e);
@@ -128,7 +129,7 @@ void Cleaner::DoCleanTarget(Node* target) {
   if (Edge* e = target->in_edge()) {
     // Do not try to remove phony targets
     if (!e->is_phony() && !e->IsPhonyOutput()) {
-      Remove(target->path());
+      Remove(target->globalPath());
       RemoveEdgeFiles(e);
     }
     for (vector<Node*>::iterator n = e->inputs_.begin(); n != e->inputs_.end();
@@ -156,21 +157,7 @@ int Cleaner::CleanTarget(Node* target) {
   return status_;
 }
 
-int Cleaner::CleanTarget(const char* target) {
-  assert(target);
-
-  Reset();
-  Node* node = state_->LookupNode(target);
-  if (node) {
-    CleanTarget(node);
-  } else {
-    Error("unknown target '%s'", target);
-    status_ = 1;
-  }
-  return status_;
-}
-
-int Cleaner::CleanTargets(int target_count, char* targets[]) {
+int Cleaner::CleanTargets(int target_count, const char* targets[]) {
   Reset();
   PrintHeader();
   LoadDyndeps();
@@ -182,7 +169,8 @@ int Cleaner::CleanTargets(int target_count, char* targets[]) {
       Error("failed to canonicalize '%s': %s", target_name.c_str(), err.c_str());
       status_ = 1;
     } else {
-      Node* target = state_->LookupNode(target_name);
+      Node* target = state_->LookupNode(
+          state_->root_scope_.GlobalPath(target_name));
       if (target) {
         if (IsVerbose())
           printf("Target %s\n", target_name.c_str());
@@ -208,7 +196,7 @@ void Cleaner::DoCleanRule(const Rule* rule) {
       }
       for (vector<Node*>::iterator out_node = (*e)->outputs_.begin();
            out_node != (*e)->outputs_.end(); ++out_node) {
-        Remove((*out_node)->path());
+        Remove((*out_node)->globalPath());
         RemoveEdgeFiles(*e);
       }
     }

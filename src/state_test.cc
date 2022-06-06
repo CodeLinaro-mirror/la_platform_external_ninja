@@ -26,15 +26,15 @@ TEST(State, Basic) {
   state.root_scope_.AddRule(rule);
 
   Edge* edge = state.AddEdge(rule);
-  state.AddIn(edge, "in1", 0);
-  state.AddIn(edge, "in2", 0);
-  state.AddOut(edge, "out", 0);
+  state.AddIn(edge, state.root_scope_.GlobalPath("in1"), 0);
+  state.AddIn(edge, state.root_scope_.GlobalPath("in2"), 0);
+  state.AddOut(edge, state.root_scope_.GlobalPath("out"), 0);
 
   EXPECT_EQ("cat in1 in2 > out", edge->EvaluateCommand());
 
-  EXPECT_FALSE(state.GetNode("in1", 0)->dirty());
-  EXPECT_FALSE(state.GetNode("in2", 0)->dirty());
-  EXPECT_FALSE(state.GetNode("out", 0)->dirty());
+  EXPECT_FALSE(state.GetNode(state.root_scope_.GlobalPath("in1"), 0)->dirty());
+  EXPECT_FALSE(state.GetNode(state.root_scope_.GlobalPath("in2"), 0)->dirty());
+  EXPECT_FALSE(state.GetNode(state.root_scope_.GlobalPath("out"), 0)->dirty());
 }
 
 }  // namespace

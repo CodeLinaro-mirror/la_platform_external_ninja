@@ -72,7 +72,7 @@ void StatusPrinter::BuildEdgeFinished(Edge* edge, int64_t end_time_millis,
     string outputs;
     for (vector<Node*>::const_iterator o = edge->outputs_.begin();
          o != edge->outputs_.end(); ++o)
-      outputs += (*o)->path() + " ";
+      outputs += (*o)->globalPath().h.str_view().AsString() + " ";
 
     printer_.PrintOnNewLine("FAILED: " + outputs + "\n");
     printer_.PrintOnNewLine(edge->EvaluateCommand() + "\n");
@@ -332,13 +332,13 @@ void StatusSerializer::BuildEdgeStarted(Edge* edge, int64_t start_time_millis) {
   edge_started->mutable_inputs()->reserve(edge->inputs_.size());
   for (vector<Node*>::iterator it = edge->inputs_.begin();
        it != edge->inputs_.end(); ++it) {
-    edge_started->add_inputs((*it)->path());
+    edge_started->add_inputs((*it)->globalPath().h.data());
   }
 
   edge_started->mutable_outputs()->reserve(edge->inputs_.size());
   for (vector<Node*>::iterator it = edge->outputs_.begin();
        it != edge->outputs_.end(); ++it) {
-    edge_started->add_outputs((*it)->path());
+    edge_started->add_outputs((*it)->globalPath().h.data());
   }
 
   edge_started->set_desc(edge->GetBinding("description"));

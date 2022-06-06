@@ -171,3 +171,50 @@ Rule* Scope::LookupRuleAtPos(const HashedStrView& rule_name,
   }
   return LookupRuleAtPos(rule_name, scope->parent_);
 }
+
+GlobalPathStr Scope::GlobalPath(const HashedStrView& path) {
+  if (chdir_.empty()) {
+    return GlobalPathStr{path};
+  }
+
+  std::lock_guard<std::mutex> lock(global_paths_mutex_);
+  auto it = global_paths_.find(path);
+  if (it != global_paths_.end()) {
+    return GlobalPathStr{*it->second};
+  }
+
+  auto global = make_shared<HashedStr>(chdir_ + path.str_view().AsString());
+  auto result = global_paths_.insert(
+      std::pair<HashedStrView, std::shared_ptr<HashedStr>>(path, global));
+
+  const HashedStr &h = *result.first->second;
+  return GlobalPathStr{HashedStrView(h)};
+}
+
+void Scope::resetGlobalPath(const std::string& path) {
+  HashedStr hpath(path);
+  std::lock_guard<std::mutex> lock(global_paths_mutex_);
+  auto it = global_paths_.find(hpath);
+  if (it != global_paths_.end()) {
+    global_paths_.erase(it);
+  }
+}
+
+std::string Scope::ResolveChdir(Scope* child, std::string path) {
+  Scope* it = child;
+  while (it != NULL && it != this) {
+    if (!it->chdir().empty())
+      // path was relative to 'child'. Now make it relative to 'it'.
+      path = it->chdir() + path;
+
+    Scope* parent = it->parent_.scope;
+    parent = (!parent) ? it->chdirParent_ : parent;
+    if (!parent && it->chdirParent_ == NULL) {
+      Warning("Node \"%s\" not in a child of target %p \"%s\"\n", path.c_str(),
+              this, chdir().c_str());
+      break;
+    }
+    it = parent;
+  }
+  return path;
+}

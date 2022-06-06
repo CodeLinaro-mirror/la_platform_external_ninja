@@ -102,7 +102,8 @@ TEST_F(CleanTest, CleanTarget) {
   Cleaner cleaner(&state_, config_, &fs_);
 
   ASSERT_EQ(0, cleaner.cleaned_files_count());
-  ASSERT_EQ(0, cleaner.CleanTarget("out1"));
+  const char* outAr[] = {"out1"};
+  ASSERT_EQ(0, cleaner.CleanTargets(1, outAr));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
   EXPECT_EQ(2u, fs_.files_removed_.size());
 
@@ -114,7 +115,7 @@ TEST_F(CleanTest, CleanTarget) {
   EXPECT_LT(0, fs_.Stat("out2", &err));
   fs_.files_removed_.clear();
 
-  ASSERT_EQ(0, cleaner.CleanTarget("out1"));
+  ASSERT_EQ(0, cleaner.CleanTargets(1, outAr));
   EXPECT_EQ(0, cleaner.cleaned_files_count());
   EXPECT_EQ(0u, fs_.files_removed_.size());
 }
@@ -134,7 +135,8 @@ TEST_F(CleanTest, CleanTargetDryRun) {
   Cleaner cleaner(&state_, config_, &fs_);
 
   ASSERT_EQ(0, cleaner.cleaned_files_count());
-  ASSERT_EQ(0, cleaner.CleanTarget("out1"));
+  const char* outAr[] = {"out1"};
+  ASSERT_EQ(0, cleaner.CleanTargets(1, outAr));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
   EXPECT_EQ(0u, fs_.files_removed_.size());
 
@@ -146,7 +148,7 @@ TEST_F(CleanTest, CleanTargetDryRun) {
   EXPECT_LT(0, fs_.Stat("out2", &err));
   fs_.files_removed_.clear();
 
-  ASSERT_EQ(0, cleaner.CleanTarget("out1"));
+  ASSERT_EQ(0, cleaner.CleanTargets(1, outAr));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
   EXPECT_EQ(0u, fs_.files_removed_.size());
 }
@@ -265,7 +267,8 @@ TEST_F(CleanTest, CleanDepFileOnCleanTarget) {
   fs_.Create("out1.d", "");
 
   Cleaner cleaner(&state_, config_, &fs_);
-  EXPECT_EQ(0, cleaner.CleanTarget("out1"));
+  const char* outAr[] = {"out1"};
+  EXPECT_EQ(0, cleaner.CleanTargets(1, outAr));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
   EXPECT_EQ(2u, fs_.files_removed_.size());
 }
@@ -373,9 +376,11 @@ TEST_F(CleanTest, CleanRsp) {
 
   Cleaner cleaner(&state_, config_, &fs_);
   ASSERT_EQ(0, cleaner.cleaned_files_count());
-  ASSERT_EQ(0, cleaner.CleanTarget("out1"));
+  const char* outAr[] = {"out1"};
+  ASSERT_EQ(0, cleaner.CleanTargets(1, outAr));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
-  ASSERT_EQ(0, cleaner.CleanTarget("in2"));
+  const char* inAr[] = {"in2"};
+  ASSERT_EQ(0, cleaner.CleanTargets(1, inAr));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
   ASSERT_EQ(0, cleaner.CleanRule("cat_rsp"));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
@@ -421,7 +426,8 @@ TEST_F(CleanTest, CleanPhony) {
   fs_.Create("t2", "");
 
   // Check that CleanTarget does not remove "phony".
-  EXPECT_EQ(0, cleaner.CleanTarget("phony"));
+  const char* phonyAr[] = {"phony"};
+  EXPECT_EQ(0, cleaner.CleanTargets(1, phonyAr));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
   EXPECT_LT(0, fs_.Stat("phony", &err));
 }
@@ -449,8 +455,9 @@ TEST_F(CleanTest, CleanPhonyOutput) {
   fs_.Create("t1", "");
   fs_.Create("t2", "");
 
-  // Check that CleanTarget does not remove "phony".
-  EXPECT_EQ(0, cleaner.CleanTarget("phout"));
+  // Check that CleanTarget does not remove "phout".
+  const char* phoutAr[] = {"phout"};
+  EXPECT_EQ(0, cleaner.CleanTargets(1, phoutAr));
   EXPECT_EQ(2, cleaner.cleaned_files_count());
   EXPECT_LT(0, fs_.Stat("phout", &err));
 }
@@ -482,4 +489,43 @@ TEST_F(CleanTest, CleanDepFileAndRspFileWithSpaces) {
   EXPECT_EQ(0, fs_.Stat("out 2", &err));
   EXPECT_EQ(0, fs_.Stat("out 1.d", &err));
   EXPECT_EQ(0, fs_.Stat("out 2.rsp", &err));
+}
+
+TEST_F(CleanTest, CleanChdir) {
+  // Create the subninja in the chdir 'test-b':
+  fs_.MakeDir("test-b");
+  fs_.Create("test-b/b.ninja",
+             "rule dd\n"
+             "  command = dd $in > $out\n"
+             "build out3: dd in3\n"
+             "build out4: dd in4\n"
+             "build final5: dd out3\n");
+
+  ManifestParser parser(&state_, &fs_, ManifestParserOptions());
+  string err;
+  EXPECT_TRUE(parser.ParseTest(
+"rule phony_out\n"
+"  command = echo ${out}\n"
+"  phony_output = true\n"
+"build phout: phony_out t1 t2\n"
+"build t1: cat\n"
+"build t2: cat\n"
+"subninja test-b/b.ninja\n"
+"  chdir = test-b\n",
+    &err));
+  ASSERT_EQ("", err);
+  VerifyGraph(state_);
+
+  fs_.Create("phout", "");
+  fs_.Create("t1", "");
+  fs_.Create("t2", "");
+  fs_.Create("test-b/out3", "");
+  fs_.Create("test-b/out4", "");
+  fs_.Create("test-b/final5", "");
+
+  // CleanAll does not remove "phout". CleanAll *does* find the chdir.
+  Cleaner cleaner(&state_, config_, &fs_);
+  EXPECT_EQ(0, cleaner.CleanAll());
+  EXPECT_EQ(5, cleaner.cleaned_files_count());
+  EXPECT_LT(0, fs_.Stat("phout", &err));
 }

@@ -23,9 +23,10 @@
 #include "version.h"
 
 DyndepParser::DyndepParser(State* state, FileReader* file_reader,
-                           DyndepFile* dyndep_file)
+                           DyndepFile* dyndep_file, Scope* scope)
     : Parser(state, file_reader)
-    , dyndep_file_(dyndep_file) {
+    , dyndep_file_(dyndep_file)
+    , scope_(scope) {
 }
 
 bool DyndepParser::Parse(const string& filename, const string& input,
@@ -124,7 +125,7 @@ bool DyndepParser::ParseEdge(Lexer& lexer, string* err) {
     uint64_t slash_bits;
     if (!CanonicalizePath(&path, &slash_bits, &path_err))
       return lexer.Error(path_err, err);
-    Node* node = state_->LookupNode(path);
+    Node* node = state_->LookupNode(scope_.scope->GlobalPath(path));
     if (!node || !node->in_edge())
       return lexer.Error("no build statement exists for '" + path + "'", err);
     Edge* edge = node->in_edge();
@@ -213,7 +214,7 @@ bool DyndepParser::ParseEdge(Lexer& lexer, string* err) {
     uint64_t slash_bits;
     if (!CanonicalizePath(&path, &slash_bits, &path_err))
       return lexer.Error(path_err, err);
-    Node* n = state_->GetNode(path, slash_bits);
+    Node* n = state_->GetNode(scope_.scope->GlobalPath(path), slash_bits);
     dyndeps->implicit_inputs_.push_back(n);
   }
 
@@ -225,7 +226,7 @@ bool DyndepParser::ParseEdge(Lexer& lexer, string* err) {
     uint64_t slash_bits;
     if (!CanonicalizePath(&path, &slash_bits, &path_err))
       return lexer.Error(path_err, err);
-    Node* n = state_->GetNode(path, slash_bits);
+    Node* n = state_->GetNode(scope_.scope->GlobalPath(path), slash_bits);
     dyndeps->implicit_outputs_.push_back(n);
   }
 

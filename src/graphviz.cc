@@ -24,7 +24,7 @@ void GraphViz::AddTarget(Node* node) {
   if (visited_nodes_.find(node) != visited_nodes_.end())
     return;
 
-  string pathstr = node->path();
+  string pathstr = node->globalPath().h.data();
   replace(pathstr.begin(), pathstr.end(), '\\', '/');
   printf("\"%p\" [label=\"%s\"]\n", node, pathstr.c_str());
   visited_nodes_.insert(node);

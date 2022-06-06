@@ -105,9 +105,9 @@ bool Plan::AddSubTarget(Node* node, Node* dependent, string* err,
     if (node->dirty()) {
       string referenced;
       if (dependent)
-        referenced = ", needed by '" + dependent->path() + "',";
-      *err = "'" + node->path() + "'" + referenced + " missing "
-             "and no known rule to make it";
+        referenced = ", needed by '" + dependent->globalPath().h.str_view().AsString() + "',";
+      *err = "'" + node->globalPath().h.str_view().AsString() + "'" + referenced +
+             " missing and no known rule to make it";
     }
     return false;
   }
@@ -562,20 +562,24 @@ void Builder::Cleanup() {
         // but is interrupted before it touches its output file.)
         string err;
         bool is_dir = false;
-        TimeStamp new_mtime = disk_interface_->LStat((*o)->path(), &is_dir, nullptr, &err);
+        const string pathStr = (*o)->globalPath().h.data();
+        TimeStamp new_mtime =
+            disk_interface_->LStat(pathStr, &is_dir, nullptr, &err);
         if (new_mtime == -1)  // Log and ignore LStat() errors.
           status_->Error("%s", err.c_str());
         if (!is_dir && (!depfile.empty() || (*o)->mtime() != new_mtime))
-          disk_interface_->RemoveFile((*o)->path());
+          disk_interface_->RemoveFile(pathStr);
       }
       if (!depfile.empty())
-        disk_interface_->RemoveFile(depfile);
+        // depfile is relative, disk_interface_ uses global paths.
+        disk_interface_->RemoveFile(
+            (*e)->pos_.scope()->GlobalPath(depfile).h.data());
     }
   }
 }
 
 Node* Builder::AddTarget(const string& name, string* err) {
-  Node* node = state_->LookupNode(name);
+  Node* node = state_->LookupNode(state_->root_scope_.GlobalPath(name));
   if (!node) {
     *err = "unknown target: '" + name + "'";
     return NULL;
@@ -732,7 +736,8 @@ bool Builder::StartEdge(Edge* edge, string* err) {
          o != edge->outputs_.end(); ++o) {
       // Create directories necessary for outputs.
       // XXX: this will block; do we care?
-      if (!disk_interface_->MakeDirs((*o)->path()))
+      if (!disk_interface_->MakeDirs(
+          (*o)->globalPath().h.data()))
         return false;
 
       if (!(*o)->exists())
@@ -741,7 +746,8 @@ bool Builder::StartEdge(Edge* edge, string* err) {
       // Remove existing outputs for non-restat rules.
       // XXX: this will block; do we care?
       if (config_.pre_remove_output_files && !edge->IsRestat() && !config_.dry_run) {
-        if (disk_interface_->RemoveFile((*o)->path()) < 0)
+        if (disk_interface_->RemoveFile(
+            (*o)->globalPath().h.data()) < 0)
           return false;
       }
     }
@@ -752,7 +758,10 @@ bool Builder::StartEdge(Edge* edge, string* err) {
   string rspfile = edge->GetUnescapedRspfile();
   if (!rspfile.empty()) {
     string content = edge->GetBinding("rspfile_content");
-    if (!disk_interface_->WriteFile(rspfile, content))
+    if (!disk_interface_->WriteFile(
+        // rspfile is relative, disk_interface_ uses global paths.
+        edge->pos_.scope()->GlobalPath(rspfile).h.data(),
+        content))
       return false;
   }
 
@@ -857,24 +866,23 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
       if (config_.uses_symlink_outputs) {
         /// Warn or error if created symlinks aren't declared in symlink_outputs,
         /// or if created files are declared in symlink_outputs.
-        string path = (*o)->path();
         if (is_symlink) {
-          if (declared_symlinks.find(path) == declared_symlinks.end()) {
+          if (declared_symlinks.find((*o)->path()) == declared_symlinks.end()) {
             // Not in declared_symlinks
             if (!result->output.empty())
               result->output.append("\n");
-            result->output.append("ninja: " + path + " is a symlink, but it was not declared in symlink_outputs");
+            result->output.append("ninja: " + (*o)->path() + " is a symlink, but it was not declared in symlink_outputs");
             if (config_.undeclared_symlink_outputs_should_err) {
               result->status = ExitFailure;
             }
           } else {
-            declared_symlinks.erase(path);
+            declared_symlinks.erase((*o)->path());
           }
-        } else if (!is_symlink && declared_symlinks.find(path) != declared_symlinks.end()) {
+        } else if (!is_symlink && declared_symlinks.find((*o)->path()) != declared_symlinks.end()) {
           if (!result->output.empty())
             result->output.append("\n");
-          result->output.append("ninja: " + path + " is not a symlink, but it was declared in symlink_outputs");
-          declared_symlinks.erase(path);
+          result->output.append("ninja: " + (*o)->path() + " is not a symlink, but it was declared in symlink_outputs");
+          declared_symlinks.erase((*o)->path());
           if (config_.undeclared_symlink_outputs_should_err) {
             result->status = ExitFailure;
           }
@@ -952,7 +960,10 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
 
       string depfile = edge->GetUnescapedDepfile();
       if (restat_mtime != 0 && deps_type.empty() && !depfile.empty()) {
-        TimeStamp depfile_mtime = disk_interface_->Stat(depfile, err);
+        TimeStamp depfile_mtime = disk_interface_->Stat(
+            // depfile is relative, disk_interface_ uses global paths.
+            edge->pos_.scope()->GlobalPath(depfile).h.data(),
+            err);
         if (depfile_mtime == -1)
           return false;
         if (depfile_mtime > restat_mtime)
@@ -980,7 +991,9 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
   // Delete any left over response file.
   string rspfile = edge->GetUnescapedRspfile();
   if (!rspfile.empty() && !g_keep_rsp)
-    disk_interface_->RemoveFile(rspfile);
+    // rspfile is relative, disk_interface_ uses global paths.
+    disk_interface_->RemoveFile(
+        edge->pos_.scope()->GlobalPath(rspfile).h.data());
 
   if (scan_.build_log() && !phony_output) {
     if (!scan_.build_log()->RecordCommand(edge, start_time_millis,
@@ -992,7 +1005,7 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
 
   if (!deps_type.empty() && !config_.dry_run && !phony_output) {
     Node* out = edge->outputs_[0];
-    TimeStamp deps_mtime = disk_interface_->LStat(out->path(), nullptr, nullptr, err);
+    TimeStamp deps_mtime = disk_interface_->LStat(out->globalPath().h.data(), nullptr, nullptr, err);
     if (deps_mtime == -1)
       return false;
     if (!scan_.deps_log()->RecordDeps(out, deps_mtime, deps_nodes)) {
@@ -1020,7 +1033,8 @@ bool Builder::ExtractDeps(CommandRunner::Result* result,
       // all backslashes (as some of the slashes will certainly be backslashes
       // anyway). This could be fixed if necessary with some additional
       // complexity in IncludesNormalize::Relativize.
-      deps_nodes->push_back(state_->GetNode(*i, ~0u));
+      deps_nodes->push_back(
+          state_->GetNode(result->edge->pos_.scope()->GlobalPath(*i), ~0u));
     }
   } else
   if (deps_type == "gcc") {
@@ -1074,7 +1088,9 @@ bool Builder::ExtractDeps(CommandRunner::Result* result,
       if (!CanonicalizePath(const_cast<char*>(i->str_), &i->len_, &slash_bits,
                             err))
         return false;
-      deps_nodes->push_back(state_->GetNode(*i, slash_bits));
+      deps_nodes->push_back(
+          state_->GetNode(result->edge->pos_.scope()->GlobalPath(*i),
+          slash_bits));
     }
 
     if (!g_keep_depfile) {

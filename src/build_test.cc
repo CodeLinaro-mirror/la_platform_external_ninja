@@ -552,7 +552,7 @@ struct BuildTest : public StateTestWithBuiltinRules, public BuildLogUser {
     builder_.command_runner_.release();
   }
 
-  virtual bool IsPathDead(StringPiece s) const { return false; }
+  virtual bool IsPathDead(GlobalPathStr s) const { return false; }
 
   /// Rebuild target in the 'working tree' (fs_).
   /// State of command_runner_ and logs contents (if specified) ARE MODIFIED.
@@ -1846,7 +1846,10 @@ TEST_F(BuildWithLogTest, RestatMissingInput) {
 
   // See that an entry in the logfile is created, capturing
   // the right mtime
-  BuildLog::LogEntry* log_entry = build_log_.LookupByOutput("out1");
+  string out1 = "out1";
+  HashedStrView out1h(out1);
+  BuildLog::LogEntry* log_entry =
+      build_log_.LookupByOutput(GlobalPathStr{out1h});
   ASSERT_TRUE(NULL != log_entry);
   ASSERT_EQ(restat_mtime, log_entry->mtime);
 
@@ -1863,7 +1866,7 @@ TEST_F(BuildWithLogTest, RestatMissingInput) {
   ASSERT_EQ(1u, command_runner_.commands_ran_.size());
 
   // Check that the logfile entry remains correctly set
-  log_entry = build_log_.LookupByOutput("out1");
+  log_entry = build_log_.LookupByOutput(GlobalPathStr{out1h});
   ASSERT_TRUE(NULL != log_entry);
   ASSERT_EQ(restat_mtime, log_entry->mtime);
 }
@@ -2027,7 +2030,10 @@ TEST_F(BuildWithLogTest, RspFileCmdLineChange) {
 
   // 3. Alter the entry in the logfile
   // (to simulate a change in the command line between 2 builds)
-  BuildLog::LogEntry* log_entry = build_log_.LookupByOutput("out");
+  string out = "out";
+  HashedStrView outh(out);
+  BuildLog::LogEntry* log_entry =
+      build_log_.LookupByOutput(GlobalPathStr{outh});
   ASSERT_TRUE(NULL != log_entry);
   ASSERT_NO_FATAL_FAILURE(AssertHash(
         "cat out.rsp > out;rspfile=Original very long command",
@@ -2473,7 +2479,8 @@ TEST_F(BuildWithDepsLogTest, DepFileOKDepsLog) {
 
     Edge* edge = state.edges_.back();
 
-    state.GetNode("bar.h", 0)->MarkDirty();  // Mark bar.h as missing.
+    state.GetNode(state.root_scope_.GlobalPath("bar.h"), 0)
+        ->MarkDirty();  // Mark bar.h as missing.
     EXPECT_TRUE(builder.AddTarget("fo o.o", &err));
     ASSERT_EQ("", err);
 

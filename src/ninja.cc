@@ -169,7 +169,7 @@ struct NinjaMain : public BuildLogUser {
   /// Dump the output requested by '-d stats'.
   void DumpMetrics(Status *status);
 
-  virtual bool IsPathDead(StringPiece s) const {
+  virtual bool IsPathDead(GlobalPathStr s) const {
     Node* n = state_.LookupNode(s);
     if (!n || !n->in_edge())
       return false;
@@ -183,7 +183,8 @@ struct NinjaMain : public BuildLogUser {
     // Do keep entries around for files which still exist on disk, for
     // generators that want to use this information.
     string err;
-    TimeStamp mtime = disk_interface_.LStat(s.AsString(), nullptr, nullptr, &err);
+    TimeStamp mtime = disk_interface_.LStat(s.h.data(), nullptr,
+                                            nullptr, &err);
     if (mtime == -1)
       Error("%s", err.c_str());  // Log and ignore Stat() errors.
     return mtime == 0;
@@ -271,7 +272,7 @@ bool NinjaMain::RebuildManifest(const char* input_file, string* err,
   uint64_t slash_bits;  // Unused because this path is only used for lookup.
   if (!CanonicalizePath(&path, &slash_bits, err))
     return false;
-  Node* node = state_.LookupNode(path);
+  Node* node = state_.LookupNode(state_.root_scope_.GlobalPath(path));
   if (!node)
     return false;
 
@@ -311,7 +312,7 @@ Node* NinjaMain::CollectTarget(const char* cpath, string* err) {
     first_dependent = true;
   }
 
-  Node* node = state_.LookupNode(path);
+  Node* node = state_.LookupNode(state_.root_scope_.GlobalPath(path));
   if (node) {
     if (first_dependent) {
       if (!node->has_out_edge()) {
@@ -336,7 +337,7 @@ Node* NinjaMain::CollectTarget(const char* cpath, string* err) {
     } else {
       Node* suggestion = state_.SpellcheckNode(path);
       if (suggestion) {
-        *err += ", did you mean '" + suggestion->path() + "'?";
+        *err += ", did you mean '" + suggestion->globalPath().h.str_view().AsString() + "'?";
       }
     }
     return NULL;
@@ -445,7 +446,8 @@ int NinjaMain::ToolPath(const Options* options, int argc, char* argv[]) {
       }
     }
   }
-  Error("%s does not depend on %s", out->path().c_str(), in->path().c_str());
+  Error("%s does not depend on %s", out->globalPath().h.data(),
+        in->globalPath().h.data());
   return 1;
 }
 
@@ -468,7 +470,8 @@ int NinjaMain::ToolPaths(const Options* options, int argc, char* argv[]) {
 
   std::vector<DepPath> all_paths = GetDependencyPaths(in, out);
   if (all_paths.empty()) {
-    Error("%s does not depend on %s", out->path().c_str(), in->path().c_str());
+    Error("%s does not depend on %s", out->globalPath().h.data(),
+          in->globalPath().h.data());
     return 1;
   }
 
@@ -524,9 +527,9 @@ void ToolInputsProcessNodeDeps(
   // Print all of this node's deps from the deps log. This often includes files
   // that are not known by the node's input edge.
   if (deps_log->IsDepsEntryLiveFor(node)) {
-    if (DepsLog::Deps* deps = deps_log->GetDeps(node); deps != nullptr) {
+    DepsLog::Deps* deps = deps_log->GetDeps(node); if (deps != nullptr) {
       for (int i = 0; i < deps->node_count; ++i) {
-        if (Node* dep = deps->nodes[i]; dep != nullptr) {
+        Node* dep = deps->nodes[i]; if (dep != nullptr) {
           ToolInputsProcessNode(dep, deps_log, leaf_only, include_deps,
                                 excluded_paths);
         }
@@ -583,7 +586,7 @@ int NinjaMain::ToolInputs(const Options* options, int argc, char* argv[]) {
     node->MarkInputsChecked();
     // Call ToolInputsProcessNode on this node's inputs, and not on itself,
     // so that this node is not included in the output.
-    if (Edge* edge = node->in_edge(); edge != nullptr) {
+    Edge* edge = node->in_edge(); if (edge != nullptr) {
       for (Node* input : edge->inputs_) {
         ToolInputsProcessNode(input, &deps_log_, leaf_only, include_deps,
                               excluded_paths);
@@ -771,19 +774,21 @@ int NinjaMain::ToolDeps(const Options* options, int argc, char** argv) {
        it != end; ++it) {
     DepsLog::Deps* deps = deps_log_.GetDeps(*it);
     if (!deps) {
-      printf("%s: deps not found\n", (*it)->path().c_str());
+      printf("%s: deps not found\n", (*it)->globalPath().h.data());
       continue;
     }
 
     string err;
-    TimeStamp mtime = disk_interface.Stat((*it)->path(), &err);
+    TimeStamp mtime =
+        disk_interface.Stat((*it)->globalPath().h.data(), &err);
     if (mtime == -1)
       Error("%s", err.c_str());  // Log and ignore Stat() errors;
     printf("%s: #deps %d, deps mtime %" PRId64 " (%s)\n",
-           (*it)->path().c_str(), deps->node_count, deps->mtime,
+           (*it)->globalPath().h.data(),
+           deps->node_count, deps->mtime,
            (!mtime || mtime > deps->mtime ? "STALE":"VALID"));
     for (int i = 0; i < deps->node_count; ++i)
-      printf("    %s\n", deps->nodes[i]->path().c_str());
+      printf("    %s\n", deps->nodes[i]->globalPath().h.data());
     printf("\n");
   }
 
@@ -932,7 +937,7 @@ int NinjaMain::ToolClean(const Options* options, int argc, char* argv[]) {
     if (clean_rules)
       return cleaner.CleanRules(argc, argv);
     else
-      return cleaner.CleanTargets(argc, argv);
+      return cleaner.CleanTargets(argc, (const char**) argv);
   } else {
     return cleaner.CleanAll(generator);
   }

@@ -18,6 +18,7 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <sstream>
 
 #include "util.h"
 
@@ -73,6 +74,39 @@ HANDLE Subprocess::SetupPipe(HANDLE ioport) {
 }
 
 bool Subprocess::Start(SubprocessSet* set, const string& command) {
+  // chdir is passed to CreateProcessA. If it is NULL, no chdir is needed.
+  //
+  // BUG: CreateProcessA does the search for argv[0] before changing to chdir
+  //      and executing the subprocess - since most executables are in the PATH
+  //      this can get confusing. The problem is this is not identical to
+  //      running a ninja in the chdir, where "." is correct.
+  char* chdir = NULL;
+  // cleanedCommand contains command after it has been cleaned up.
+  std::string cleanedCommand;
+
+  static const char[] delim = NINJA_WIN32_CD_DELIM;
+  static const size_t delimSize = sizeof(delim) / sizeof(delim[0]);
+  if (command.compare(0, delimSize, delim) != std::string::npos) {
+    auto endCD = command.find(delim, delimSize);
+    if (endCD == std::string::npos) {
+      // Only recognize NINJA_WIN32_CD_DELIM if there are two of them.
+      cleanedCommand = command;
+    } else {
+      // Recognize and remove NINJA_WIN32_CD_DELIM
+      chdir = _fullpath(NULL /*_fullpath will malloc*/,
+                        command.substr(delimSize, endCD - delimSize).c_str(),
+                        PATH_MAX);
+      if (!chdir) {
+        stringstream ss;
+        ss << "_fullpath(" << command << ") failed: errno=" << errno;
+        Fatal(ss.str().c_str());
+      }
+      cleanedCommand = command.substr(endCD + delimSize);
+    }
+  } else {
+    cleanedCommand = command;
+  }
+
   HANDLE child_pipe = SetupPipe(set->ioport_);
 
   SECURITY_ATTRIBUTES security_attributes;
@@ -107,11 +141,14 @@ bool Subprocess::Start(SubprocessSet* set, const string& command) {
 
   // Do not prepend 'cmd /c' on Windows, this breaks command
   // lines greater than 8,191 chars.
-  if (!CreateProcessA(NULL, (char*)command.c_str(), NULL, NULL,
+  if (!CreateProcessA(NULL, (char*)cleanedCommand.c_str(), NULL, NULL,
                       /* inherit handles */ TRUE, process_flags,
-                      NULL, NULL,
+                      NULL, chdir,
                       &startup_info, &process_info)) {
     DWORD error = GetLastError();
+    if (chdir) {
+      free(chdir);
+    }
     if (error == ERROR_FILE_NOT_FOUND) {
       // File (program) not found error is treated as a normal build
       // action failure.
@@ -131,6 +168,9 @@ bool Subprocess::Start(SubprocessSet* set, const string& command) {
     } else {
       Win32Fatal("CreateProcess");    // pass all other errors to Win32Fatal
     }
+  }
+  if (chdir) {
+    free(chdir);
   }
 
   // Close pipe channel only used by the child.

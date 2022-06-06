@@ -454,7 +454,7 @@ TEST_F(GraphTest, PhonyOutput) {
 "  phony_output = true\n"
 "build foo: phony_out\n"));
 
-  Node* node = state_.LookupNode("foo");
+  Node* node = state_.LookupNode(state_.root_scope_.GlobalPath("foo"));
   Edge* edge = node->in_edge();
   ASSERT_TRUE(edge->IsPhonyOutput());
 }

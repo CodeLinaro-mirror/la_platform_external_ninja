@@ -92,7 +92,7 @@ void StateTestWithBuiltinRules::AddCatRule(State* state) {
 
 Node* StateTestWithBuiltinRules::GetNode(const string& path) {
   EXPECT_FALSE(strpbrk(path.c_str(), "/\\"));
-  return state_.GetNode(path, 0);
+  return state_.GetNode(state_.root_scope_.GlobalPath(path), 0);
 }
 
 void AssertParse(State* state, const char* input,
@@ -155,14 +155,14 @@ void VerifyGraph(const State& state) {
   //  - Removing an invalid edge for dupbuild=warn doesn't remove the input
   //    nodes.
   for (Node* n : edge_nodes)
-    EXPECT_EQ(n, state.LookupNode(n->path()));
+    EXPECT_EQ(n, state.LookupNode(n->globalPath()));
 
   // Check each node against the set of edges.
   for (const auto& p : state.paths_) {
     Node* n = p.second;
     auto out_edges_vec = n->GetOutEdges();
     std::set<Edge*> out_edges(out_edges_vec.begin(), out_edges_vec.end());
-    EXPECT_EQ(n, state.LookupNode(n->path()));
+    EXPECT_EQ(n, state.LookupNode(n->globalPath()));
     EXPECT_EQ(expected_node_outputs[n], out_edges);
     EXPECT_EQ(expected_node_input[n], n->in_edge());
   }
@@ -170,26 +170,29 @@ void VerifyGraph(const State& state) {
 
 void VirtualFileSystem::Create(const string& path,
                                const string& contents) {
-  files_[path].mtime = now_;
-  files_[path].contents = contents;
-  files_created_.insert(path);
+  string fullpath = cwd_ + path;
+  files_[fullpath].mtime = now_;
+  files_[fullpath].contents = contents;
+  files_created_.insert(fullpath);
 }
 
 void VirtualFileSystem::CreateSymlink(const string& path,
                                       const string& dest) {
-  files_[path].mtime = now_;
-  files_[path].contents = dest;
-  files_[path].is_symlink = true;
-  files_created_.insert(path);
+  string fullpath = cwd_ + path;
+  files_[fullpath].mtime = now_;
+  files_[fullpath].contents = dest;
+  files_[fullpath].is_symlink = true;
+  files_created_.insert(fullpath);
 }
 
 TimeStamp VirtualFileSystem::Stat(const string& path, string* err) const {
-  DirMap::const_iterator d = dirs_.find(path);
+  string fullpath = cwd_ + path;
+  DirMap::const_iterator d = dirs_.find(fullpath);
   if (d != dirs_.end()) {
     *err = d->second.stat_error;
     return d->second.mtime;
   }
-  FileMap::const_iterator i = files_.find(path);
+  FileMap::const_iterator i = files_.find(fullpath);
   if (i != files_.end()) {
     if (i->second.is_symlink) {
       return Stat(i->second.contents, err);
@@ -201,14 +204,15 @@ TimeStamp VirtualFileSystem::Stat(const string& path, string* err) const {
 }
 
 TimeStamp VirtualFileSystem::LStat(const string& path, bool* is_dir, bool* is_symlink, string* err) const {
-  DirMap::const_iterator d = dirs_.find(path);
+  string fullpath = cwd_ + path;
+  DirMap::const_iterator d = dirs_.find(fullpath);
   if (d != dirs_.end()) {
     if (is_dir != nullptr)
       *is_dir = true;
     *err = d->second.stat_error;
     return d->second.mtime;
   }
-  FileMap::const_iterator i = files_.find(path);
+  FileMap::const_iterator i = files_.find(fullpath);
   if (i != files_.end()) {
     if (is_dir != nullptr)
       *is_dir = false;
@@ -225,13 +229,14 @@ bool VirtualFileSystem::IsStatThreadSafe() const {
 }
 
 bool VirtualFileSystem::WriteFile(const string& path, const string& contents) {
-  if (files_.find(path) == files_.end()) {
-    if (dirs_.find(path) != dirs_.end())
+  string fullpath = cwd_ + path;
+  if (files_.find(fullpath) == files_.end()) {
+    if (dirs_.find(fullpath) != dirs_.end())
       return false;
 
-    string::size_type slash_pos = path.find_last_of("/");
+    string::size_type slash_pos = fullpath.find_last_of("/");
     if (slash_pos != string::npos) {
-      DirMap::iterator d = dirs_.find(path.substr(0, slash_pos));
+      DirMap::iterator d = dirs_.find(fullpath.substr(0, slash_pos));
       if (d != dirs_.end()) {
         d->second.mtime = now_;
       } else {
@@ -245,14 +250,15 @@ bool VirtualFileSystem::WriteFile(const string& path, const string& contents) {
 }
 
 bool VirtualFileSystem::MakeDir(const string& path) {
-  if (dirs_.find(path) != dirs_.end())
+  string fullpath = cwd_ + path;
+  if (dirs_.find(fullpath) != dirs_.end())
     return true;
-  if (files_.find(path) != files_.end())
+  if (files_.find(fullpath) != files_.end())
     return false;
 
-  string::size_type slash_pos = path.find_last_of("/");
+  string::size_type slash_pos = fullpath.find_last_of("/");
   if (slash_pos != string::npos) {
-    DirMap::iterator d = dirs_.find(path.substr(0, slash_pos));
+    DirMap::iterator d = dirs_.find(fullpath.substr(0, slash_pos));
     if (d != dirs_.end()) {
       d->second.mtime = now_;
     } else {
@@ -260,8 +266,8 @@ bool VirtualFileSystem::MakeDir(const string& path) {
     }
   }
 
-  dirs_[path].mtime = now_;
-  directories_made_.push_back(path);
+  dirs_[fullpath].mtime = now_;
+  directories_made_.push_back(fullpath);
   return true;  // success
 }
 
@@ -280,8 +286,9 @@ FileReader::Status VirtualFileSystem::ReadFile(const string& path,
 FileReader::Status VirtualFileSystem::LoadFile(const std::string& path,
                                                std::unique_ptr<LoadedFile>* result,
                                                std::string* err) {
-  files_read_.push_back(path);
-  FileMap::iterator i = files_.find(path);
+  string fullpath = cwd_ + path;
+  files_read_.push_back(fullpath);
+  FileMap::iterator i = files_.find(fullpath);
   if (i != files_.end()) {
     if (i->second.is_symlink) {
       return LoadFile(i->second.contents, result, err);
@@ -295,14 +302,71 @@ FileReader::Status VirtualFileSystem::LoadFile(const std::string& path,
   return NotFound;
 }
 
+bool VirtualFileSystem::Getcwd(std::string* out_path, std::string* err) {
+  // Empty cwd_ means the current dir is '/'
+  if (cwd_.empty()) {
+    out_path->assign("/");
+  } else {
+    out_path->assign(cwd_);
+    // Strip off '/' if present.
+    if (cwd_.size() > 0 && cwd_.at(cwd_.size() - 1) == '/') {
+      out_path->erase(out_path->end() - 1);
+    }
+  }
+  err->clear();
+  return true;
+}
+
+bool VirtualFileSystem::Chdir(const std::string dir, std::string* err) {
+  // VirtualFileSystem::Chdir does not support ".." or "." relative paths.
+  // However, simple relative paths are ok. And absolute paths are ok.
+
+  string dest;
+  if (dir.empty()) {
+    err->assign("VirtualFileSystem::Chdir does not accept the empty string");
+    return false;
+  } else if (dir == "/") {
+    cwd_.clear();
+    err->clear();
+    return true;
+  } else if (dir.at(0) == '/') {
+    // Treat path as absolute.
+    dest.insert(dest.begin(), dir.begin() + 1, dir.end());
+  } else {
+    // Treat path as relative.
+    dest = cwd_ + dir;
+  }
+  if (dest.find(".") != string::npos) {
+    err->assign("VirtualFileSystem::Chdir does not accept . or ..");
+    return false;
+  }
+  if (dest.size() > 1 && dest.at(dest.size() - 1) == '/') {
+    dest.erase(dest.size() - 1);
+  }
+
+  // Look up dest in directories_made_.
+  vector<string>::iterator i = directories_made_.begin();
+  for (; i != directories_made_.end(); i++) {
+    if (*i == dest) {
+      cwd_ = dest;
+      cwd_ += '/';
+      err->clear();
+      return true;
+    }
+  }
+  *err = strerror(ENOENT);
+  return false;
+}
+
 int VirtualFileSystem::RemoveFile(const string& path) {
-  if (dirs_.find(path) != dirs_.end())
+  string fullpath = cwd_ + path;
+  if (dirs_.find(fullpath) != dirs_.end())
     return -1;
-  FileMap::iterator i = files_.find(path);
+  FileMap::iterator i = files_.find(fullpath);
   if (i != files_.end()) {
-    string::size_type slash_pos = path.find_last_of("/");
+    string::size_type slash_pos = fullpath.find_last_of("/");
     if (slash_pos != string::npos) {
-      DirMap::iterator d = dirs_.find(path.substr(0, slash_pos));
+      DirMap::iterator d = dirs_.find(fullpath.substr(0, slash_pos));
       if (d != dirs_.end()) {
         d->second.mtime = now_;
       }

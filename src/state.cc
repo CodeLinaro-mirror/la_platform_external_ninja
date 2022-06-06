@@ -111,26 +111,29 @@ Pool* State::LookupPoolAtPos(const HashedStrView& pool_name,
   return result->dfs_location() < dfs_location ? result : nullptr;
 }
 
-Node* State::GetNode(const HashedStrView& path, uint64_t slash_bits) {
-  if (Node** opt_node = paths_.Lookup(path))
+Node* State::GetNode(GlobalPathStr pathG, uint64_t slash_bits) {
+  if (Node** opt_node = paths_.Lookup(pathG.h))
     return *opt_node;
   // Create a new node and try to insert it.
-  std::unique_ptr<Node> node(new Node(path, slash_bits));
-  if (paths_.insert({node->path_hashed(), node.get()}).second)
+  // All nodes are created in root_scope_. Nodes that live in a chdir scope
+  // will be fixed up later.
+  std::unique_ptr<Node> node(new Node(pathG.h, &root_scope_, slash_bits));
+  pathG = node->globalPath();
+  if (paths_.insert({pathG.h, node.get()}).second)
     return node.release();
   // Another thread beat us to it. Use its node instead.
-  return *paths_.Lookup(path);
+  return *paths_.Lookup(pathG.h);
 }
 
-Node* State::LookupNode(const HashedStrView& path) const {
-  if (Node* const* opt_node = paths_.Lookup(path))
+Node* State::LookupNode(GlobalPathStr pathG) const {
+  if (Node* const* opt_node = paths_.Lookup(pathG.h))
     return *opt_node;
   return nullptr;
 }
 
-Node* State::LookupNodeAtPos(const HashedStrView& path,
+Node* State::LookupNodeAtPos(GlobalPathStr pathG,
                              DeclIndex dfs_location) const {
-  Node* result = LookupNode(path);
+  Node* result = LookupNode(pathG);
   return result && result->dfs_location() < dfs_location ? result : nullptr;
 }
 
@@ -151,13 +154,19 @@ Node* State::SpellcheckNode(StringPiece path) {
   return result;
 }
 
-void State::AddIn(Edge* edge, StringPiece path, uint64_t slash_bits) {
+void State::AddIn(Edge* edge, GlobalPathStr path, uint64_t slash_bits) {
+  // Note: AddIn() doesn't actually get called anywhere but unit tests;
+  // see manifest_parser.cc AddPathToEdge() which directly mutates
+  // edge->inputs_.
   Node* node = GetNode(path, slash_bits);
   edge->inputs_.push_back(node);
   node->AddOutEdge(edge);
 }
 
-bool State::AddOut(Edge* edge, StringPiece path, uint64_t slash_bits) {
+bool State::AddOut(Edge* edge, GlobalPathStr path, uint64_t slash_bits) {
+  // Note: AddOut() doesn't actually get called anywhere but unit tests;
+  // see manifest_parser.cc AddPathToEdge() which directly mutates
+  // edge->outputs_.
   Node* node = GetNode(path, slash_bits);
   if (node->in_edge())
     return false;
@@ -209,7 +218,7 @@ void State::Dump() {
   for (Paths::iterator i = paths_.begin(); i != paths_.end(); ++i) {
     Node* node = i->second;
     printf("%s %s [id:%d]\n",
-           node->path().c_str(),
+           node->globalPath().h.data(),
            node->status_known() ? (node->dirty() ? "dirty" : "clean")
                                 : "unknown",
            node->id());
