@@ -201,17 +201,38 @@ void Scope::resetGlobalPath(const std::string& path) {
 }
 
 std::string Scope::ResolveChdir(Scope* child, std::string path) {
+  // Calculate a relative path from this -> child by walking up the
+  // list of scopes to the root. Any chdir between child and this is
+  // added to the path.
+  //
+  // Step 1: follow this to its parents until a chdir is found. A chdir has
+  // target->parent_.scope == NULL && target->chdirParent_ != NULL:
+  Scope* target = this;
+  while (target->parent_.scope != NULL) {
+    target = target->parent_.scope;
+  }
+
+  // Step 2: follow child to its parents, adding any chdir found.
   Scope* it = child;
-  while (it != NULL && it != this) {
+  // Stop when it == target. The base case where it == NULL is an error.
+  while (it != NULL && it != target) {
     if (!it->chdir().empty())
       // path was relative to 'child'. Now make it relative to 'it'.
       path = it->chdir() + path;
 
+    // Either it->parent_.scope has a non-chdir parent, or...
     Scope* parent = it->parent_.scope;
+    // if parent is still NULL, it->chdirParent_ has a chdir parent.
     parent = (!parent) ? it->chdirParent_ : parent;
+
     if (!parent && it->chdirParent_ == NULL) {
-      Warning("Node \"%s\" not in a child of target %p \"%s\"\n", path.c_str(),
-              this, chdir().c_str());
+      // parent == NULL, and it = parent (below), so end the loop now.
+      //
+      // A Node cannot be a reference inside a sibling subninja chdir, only
+      // children of the current scope. At this point path has all dirs up to
+      // the root.
+      Warning("Node \"%s\" (%p) not in a child of target \"%s\" (%p)\n",
+              path.c_str(), child, target->chdir().c_str(), target);
       break;
     }
     it = parent;

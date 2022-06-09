@@ -232,6 +232,9 @@ struct Scope {
   /// a relative path to where the build product can be found.
   std::string ResolveChdir(Scope* child, std::string path);
 
+  // Used for testing.
+  Scope* parent() const { return parent_.scope; }
+
 private:
   /// The position of this scope within its parent scope.
   /// (ScopePosition::parent will be nullptr for the root scope.)

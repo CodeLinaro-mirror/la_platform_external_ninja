@@ -944,24 +944,30 @@ TEST_F(ParserTest, SubNinja) {
   ASSERT_EQ(1u, fs_.files_read_.size());
 
   EXPECT_EQ("test.ninja", fs_.files_read_[0]);
-  EXPECT_TRUE(LookupNode("some_dir/outer"));
+  Node* outer = LookupNode("some_dir/outer");
+  EXPECT_TRUE(outer);
   // Verify our builddir setting is inherited.
-  EXPECT_TRUE(LookupNode("some_dir/inner"));
+  Node* inner = LookupNode("some_dir/inner");
+  EXPECT_TRUE(inner);
 
   ASSERT_EQ(3u, state.edges_.size());
   EXPECT_EQ("varref outer", state.edges_[0]->EvaluateCommand());
   EXPECT_EQ("varref inner", state.edges_[1]->EvaluateCommand());
   EXPECT_EQ("varref outer", state.edges_[2]->EvaluateCommand());
+
+  // Verify inner scope links back to parent.
+  ASSERT_TRUE(state.edges_[1]->pos_.scope()->parent());
+  ASSERT_EQ(state.edges_[1]->pos_.scope()->parent(), outer->scope());
 }
 
 TEST_F(ParserTest, SubNinjaChdir) {
-  EXPECT_TRUE(fs_.MakeDir("a"));
-  fs_.Create("a/foo.ninja",
+  EXPECT_TRUE(fs_.MakeDir("b"));
+  fs_.Create("b/foo.ninja",
     "var = inner\n"
     "rule innerrule\n"
-    "  command = foo $var\n"
-    "build $builddir/inner: innerrule\n"
-    "build inner2: innerrule\n");
+    "  command = foo \"$var\" \"$in\" \"$out\"\n"
+    "build $builddir/inner: innerrule abc\n"
+    "build inner2: innerrule def\n");
 
   ASSERT_NO_FATAL_FAILURE(AssertParse(
 "builddir = a/\n"
@@ -969,15 +975,16 @@ TEST_F(ParserTest, SubNinjaChdir) {
 "  command = varref $var\n"
 "var = outer\n"
 "build $builddir/outer: varref\n"
-"subninja a/foo.ninja\n"
-"  chdir = a\n"
+"subninja b/foo.ninja\n"
+"  chdir = b\n"
 "build $builddir/outer2: varref\n"));
   ASSERT_EQ(1u, fs_.files_read_.size());
   ASSERT_EQ("/", VerifyCwd(fs_));
 
-  EXPECT_EQ("a/foo.ninja", fs_.files_read_[0]);
+  EXPECT_EQ("b/foo.ninja", fs_.files_read_[0]);
   HashedStrView outer("a/outer");
-  EXPECT_TRUE(state.LookupNode(GlobalPathStr{outer}));
+  Node* outerNode = state.LookupNode(GlobalPathStr{outer});
+  EXPECT_TRUE(outerNode);
   HashedStrView outer2("a/outer2");
   EXPECT_TRUE(state.LookupNode(GlobalPathStr{outer2}));
   // Verify builddir setting is *not* inherited.
@@ -987,9 +994,9 @@ TEST_F(ParserTest, SubNinjaChdir) {
   // (in this case, the filename is /inner because a/foo.ninja says
   // "build $bulddir/inner" and this validates that builddir from
   // the unnamed top-level .ninja file is not visible in a/foo.ninja)
-  HashedStrView innerslash("a/" "/inner");
+  HashedStrView innerslash("b/" "/inner");
   EXPECT_TRUE(state.LookupNode(GlobalPathStr{innerslash}));
-  HashedStrView inner2("a/inner2");
+  HashedStrView inner2("b/inner2");
   Node* inner2node = state.LookupNode(GlobalPathStr{inner2});
   EXPECT_TRUE(inner2node);
   HashedStrView slashinner("/inner");
@@ -999,10 +1006,17 @@ TEST_F(ParserTest, SubNinjaChdir) {
   Edge* edge = inner2node->in_edge();
   EXPECT_TRUE(edge);
 #ifdef _WIN32
-  EXPECT_EQ(NINJA_WIN32_CD_DELIM "a/" NINJA_WIN32_CD_DELIM "foo inner", edge->EvaluateCommand());
+  EXPECT_EQ(NINJA_WIN32_CD_DELIM "b/" NINJA_WIN32_CD_DELIM
+            "foo \"inner\" \"def\" \"inner2\"", edge->EvaluateCommand());
 #else /* _WIN32 */
-  EXPECT_EQ("cd \"a/\" && foo inner", edge->EvaluateCommand());
+  EXPECT_EQ("cd \"b/\" && foo \"inner\" \"def\" \"inner2\"", edge->EvaluateCommand());
 #endif /* _WIN32 */
+
+  // Verify chdir scope does *not* allow variables from a parent scope to
+  // leak into the chdir.
+  ASSERT_FALSE(state.edges_[1]->pos_.scope()->parent());
+  // Verify that the scope does know it is a chdir.
+  ASSERT_EQ(state.edges_[1]->pos_.scope()->chdir(), "b/");
 }
 
 TEST_F(ParserTest, SubNinjaChdirNoSuchFile) {
