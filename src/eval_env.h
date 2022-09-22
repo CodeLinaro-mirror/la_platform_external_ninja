@@ -196,6 +196,9 @@ struct Scope {
     return rules_.insert({ rule->name_hashed(), rule }).second;
   }
 
+  // Add all built-in rules at the top of a root scope.
+  void AddAllBuiltinRules();
+
   static Rule* LookupRuleAtPos(const HashedStrView& rule_name,
                                ScopePosition pos);
 

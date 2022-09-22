@@ -184,6 +184,7 @@ bool DfsParser::HandleInclude(Include& include, const LoadedFile& file,
 
     // Create scope so that subninja chdir variable lookups cannot see parent_
     *child_scope = new Scope(scope, include.chdir_plus_slash_);
+    (*child_scope)->AddAllBuiltinRules();
   } else if (include.new_scope_) {
     *child_scope = new Scope(scope->GetCurrentEndOfScope());
   } else {

@@ -239,3 +239,8 @@ std::string Scope::ResolveChdir(Scope* child, std::string path) {
   }
   return path;
 }
+
+// Add all built-in rules at the top of a root scope.
+void Scope::AddAllBuiltinRules() {
+  AddRule(&State::kPhonyRule);
+}

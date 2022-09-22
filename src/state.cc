@@ -73,14 +73,9 @@ State::State() {
   // Reserve scope position (root, 0) for built-in rules.
   root_scope_.AllocDecls(1);
 
-  AddBuiltinRule(&kPhonyRule);
+  root_scope_.AddAllBuiltinRules();
   AddPool(&kDefaultPool);
   AddPool(&kConsolePool);
-}
-
-// Add a built-in rule at the top of the root scope.
-void State::AddBuiltinRule(Rule* rule) {
-  root_scope_.AddRule(rule);
 }
 
 bool State::AddPool(Pool* pool) {
