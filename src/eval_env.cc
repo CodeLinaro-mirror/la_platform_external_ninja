@@ -244,3 +244,14 @@ std::string Scope::ResolveChdir(Scope* child, std::string path) {
 void Scope::AddAllBuiltinRules() {
   AddRule(&State::kPhonyRule);
 }
+
+Scope::~Scope() {
+  if (cmdEnviron_) {
+    for (char** p = cmdEnviron_; *p; p++) {
+      delete[] *p;
+      *p = NULL;
+    }
+    delete[] cmdEnviron_;
+    cmdEnviron_ = NULL;
+  }
+}

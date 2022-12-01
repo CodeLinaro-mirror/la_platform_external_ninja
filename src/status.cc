@@ -75,7 +75,9 @@ void StatusPrinter::BuildEdgeFinished(Edge* edge, int64_t end_time_millis,
       outputs += (*o)->globalPath().h.str_view().AsString() + " ";
 
     printer_.PrintOnNewLine("FAILED: " + outputs + "\n");
-    printer_.PrintOnNewLine(edge->EvaluateCommand() + "\n");
+    EdgeCommand c;
+    edge->EvaluateCommand(&c);
+    printer_.PrintOnNewLine(c.command + "\n");
   }
 
   if (!result->output.empty()) {
@@ -278,8 +280,10 @@ StatusSerializer::StatusSerializer(const BuildConfig& config) :
     f_ = fdopen(output_pipe[1], "wb");
 
     // Launch the frontend as a subprocess with write-end of the pipe as fd 3
-    subprocess_ = subprocess_set_.Add(config.frontend, /*use_console=*/true,
-                                      output_pipe[0]);
+    EdgeCommand c;
+    c.command = config.frontend;
+    c.use_console = true;
+    subprocess_ = subprocess_set_.Add(c, output_pipe[0]);
     close(output_pipe[0]);
   } else if (config.frontend_file != NULL) {
     f_ = fopen(config.frontend_file, "wb");

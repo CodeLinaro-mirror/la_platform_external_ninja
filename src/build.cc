@@ -496,8 +496,9 @@ bool RealCommandRunner::CanRunMore() {
 }
 
 bool RealCommandRunner::StartCommand(Edge* edge) {
-  string command = edge->EvaluateCommand();
-  Subprocess* subproc = subprocs_.Add(command, edge->use_console());
+  EdgeCommand c;
+  edge->EvaluateCommand(&c);
+  Subprocess* subproc = subprocs_.Add(c);
   if (!subproc)
     return false;
   subproc_to_edge_.insert(make_pair(subproc, edge));
@@ -767,7 +768,9 @@ bool Builder::StartEdge(Edge* edge, string* err) {
 
   // start command computing and run it
   if (!command_runner_->StartCommand(edge)) {
-    err->assign("command '" + edge->EvaluateCommand() + "' failed.");
+    EdgeCommand c;
+    edge->EvaluateCommand(&c);
+    err->assign("command '" + c.command + "' failed.");
     return false;
   }
 

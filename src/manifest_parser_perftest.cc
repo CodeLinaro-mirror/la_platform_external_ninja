@@ -65,9 +65,13 @@ int LoadManifests(bool measure_command_evaluation) {
   // commands required for the requested targets. So include command
   // evaluation in the perftest by default.
   int optimization_guard = 0;
-  if (measure_command_evaluation)
-    for (size_t i = 0; i < state.edges_.size(); ++i)
-      optimization_guard += state.edges_[i]->EvaluateCommand().size();
+  if (measure_command_evaluation) {
+    for (size_t i = 0; i < state.edges_.size(); ++i) {
+      EdgeCommand c;
+      state.edges_[i]->EvaluateCommand(&c);
+      optimization_guard += c.command.size();
+    }
+  }
   return optimization_guard;
 }
 

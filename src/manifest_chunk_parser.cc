@@ -28,6 +28,7 @@ namespace manifest_chunk {
 
 class ChunkParser {
   const LoadedFile& file_;
+  const bool experimentalEnvvar_;
   Lexer lexer_;
   const char* chunk_end_ = nullptr;
   std::vector<ParserItem>* out_ = nullptr;
@@ -64,8 +65,10 @@ class ChunkParser {
 public:
   ChunkParser(const LoadedFile& file,
               StringPiece chunk_content,
-              std::vector<ParserItem>* out)
+              std::vector<ParserItem>* out,
+              bool experimentalEnvvar)
       : file_(file),
+        experimentalEnvvar_(experimentalEnvvar),
         lexer_(file.filename(), file.content(), chunk_content.data()),
         chunk_end_(chunk_content.data() + chunk_content.size()),
         out_(out) {}
@@ -117,8 +120,39 @@ bool ChunkParser::ParseFileInclude(bool new_scope) {
   if (lexer_.PeekToken(Lexer::INDENT)) {
     if (!new_scope)
       return LexerError("indent after 'include' line is invalid.");
-    if (!lexer_.PeekToken(Lexer::CHDIR))
+    for (;;) {
+      if (lexer_.PeekToken(Lexer::CHDIR)) {
+        break;
+      }
+      if (experimentalEnvvar_) {
+        // Accept one or more "env foo = bar\n<indent><chdir>"
+        StringPiece envkey;
+        if (lexer_.ReadIdent(&envkey)) {
+          if (envkey.compare("env")) {
+            return LexerError("unexpected \"" + envkey.AsString() +
+                              "\". Only 'chdir =' allowed here.");
+          }
+          StringPiece key;
+          StringPiece val;
+          if (lexer_.ReadIdent(&key)) {
+            if (!key.compare("chdir")) {
+              return LexerError("reserved word chdir: \"env chdir =\"");
+            }
+            if (ExpectToken(Lexer::EQUALS) && lexer_.ReadIdent(&val)) {
+              auto p = include->envvar.emplace(key.AsString(), val.AsString());
+              if (!p.second) {
+                return LexerError("duplicate env var");
+              }
+              if (ExpectToken(Lexer::NEWLINE) && ExpectToken(Lexer::INDENT)) {
+                continue;
+              }
+            }
+          }
+          return LexerError("looking for chdir, did not find \"env VAR = value1 value2 value3\"");
+        }
+      }
       return LexerError("only 'chdir =' is allowed after 'subninja' line.");
+    }
     if (!ExpectToken(Lexer::EQUALS))
       return LexerError("only 'chdir =' is allowed after 'subninja' line.");
     if (!lexer_.ReadPath(&include->chdir_, &err))
@@ -379,6 +413,8 @@ bool ChunkParser::ParseEdge() {
 
   Clump* clump = MakeClump();
   edge->pos_ = clump->AllocNextPos();
+  // Can't edge->onPosResolvedToScope(clump->pos_.scope.scope) right here, since
+  // clump->pos_.scope.scope is not set until DfsParser::HandleClump().
   clump->edges_.push_back(edge);
   clump->edge_output_count_ += edge->explicit_outs_;
   return true;
@@ -417,8 +453,8 @@ bool ChunkParser::ParseChunk() {
 }
 
 void ParseChunk(const LoadedFile& file, StringPiece chunk_content,
-                std::vector<ParserItem>* out) {
-  ChunkParser parser(file, chunk_content, out);
+                std::vector<ParserItem>* out, bool experimentalEnvvar) {
+  ChunkParser parser(file, chunk_content, out, experimentalEnvvar);
   if (!parser.ParseChunk()) {
     assert(!out->empty());
     assert(out->back().kind == ParserItem::kError);

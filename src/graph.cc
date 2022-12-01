@@ -659,12 +659,12 @@ bool Edge::EvaluateCommand(std::string* out_append, bool incl_rsp_file,
   return true;
 }
 
-std::string Edge::EvaluateCommand(bool incl_rsp_file) {
-  std::string command;
+void Edge::EvaluateCommand(EdgeCommand* out, bool incl_rsp_file) {
   std::string err;
-  if (!EvaluateCommand(&command, incl_rsp_file, &err))
+  if (!EvaluateCommand(&out->command, incl_rsp_file, &err))
     Fatal("%s", err.c_str());
-  return command;
+  out->use_console = use_console();
+  out->env = cmdEnviron;
 }
 
 static const HashedStrView kRestat      { "restat" };

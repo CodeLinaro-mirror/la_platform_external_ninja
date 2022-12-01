@@ -624,7 +624,9 @@ bool FakeCommandRunner::StartCommand(Edge* edge) {
   assert(active_edges_.size() < max_active_edges_);
   assert(find(active_edges_.begin(), active_edges_.end(), edge)
          == active_edges_.end());
-  commands_ran_.push_back(edge->EvaluateCommand());
+  EdgeCommand cmd;
+  edge->EvaluateCommand(&cmd);
+  commands_ran_.push_back(cmd.command);
   if (edge->rule().name() == "cat"  ||
       edge->rule().name() == "cat_rsp" ||
       edge->rule().name() == "cat_rsp_out" ||
@@ -1207,7 +1209,9 @@ TEST_F(BuildTest, DepFileOK) {
   ASSERT_EQ(3u, edge->inputs_.size());
 
   // Expect the command line we generate to only use the original input.
-  ASSERT_EQ("cc foo.c", edge->EvaluateCommand());
+  EdgeCommand cmd;
+  edge->EvaluateCommand(&cmd);
+  ASSERT_EQ("cc foo.c", cmd.command);
 }
 
 TEST_F(BuildTest, DepFileOKWithPhonyOutputs) {
@@ -1286,7 +1290,9 @@ TEST_F(BuildTest, OrderOnlyDeps) {
   EXPECT_EQ("otherfile", edge->inputs_[3]->path());
 
   // Expect the command line we generate to only use the original input.
-  ASSERT_EQ("cc foo.c", edge->EvaluateCommand());
+  EdgeCommand cmd;
+  edge->EvaluateCommand(&cmd);
+  ASSERT_EQ("cc foo.c", cmd.command);
 
   // explicit dep dirty, expect a rebuild.
   EXPECT_TRUE(builder_.Build(&err));
@@ -1406,7 +1412,9 @@ TEST_F(BuildTest, DepFileCanonicalize) {
 
   // Expect the command line we generate to only use the original input, and
   // using the slashes from the manifest.
-  ASSERT_EQ("cc x\\y/z\\foo.c", edge->EvaluateCommand());
+  EdgeCommand cmd;
+  edge->EvaluateCommand(&cmd);
+  ASSERT_EQ("cc x\\y/z\\foo.c", cmd.command);
 }
 #endif
 
@@ -2491,7 +2499,9 @@ TEST_F(BuildWithDepsLogTest, DepFileOKDepsLog) {
     ASSERT_EQ(3u, edge->inputs_.size());
 
     // Expect the command line we generate to only use the original input.
-    ASSERT_EQ("cc foo.c", edge->EvaluateCommand());
+    EdgeCommand cmd;
+    edge->EvaluateCommand(&cmd);
+    ASSERT_EQ("cc foo.c", cmd.command);
 
     deps_log.Close();
     builder.command_runner_.release();
@@ -2556,7 +2566,9 @@ TEST_F(BuildWithDepsLogTest, DepFileDepsLogCanonicalize) {
 
     // Expect the command line we generate to only use the original input.
     // Note, slashes from manifest, not .d.
-    ASSERT_EQ("cc x\\y/z\\foo.c", edge->EvaluateCommand());
+    EdgeCommand cmd;
+    edge->EvaluateCommand(&cmd);
+    ASSERT_EQ("cc x\\y/z\\foo.c", cmd.command);
 
     deps_log.Close();
     builder.command_runner_.release();

@@ -41,7 +41,7 @@ Subprocess::~Subprocess() {
     Finish();
 }
 
-bool Subprocess::Start(SubprocessSet* set, const string& command,
+bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd,
                        int extra_fd) {
   int output_pipe[2];
   if (pipe(output_pipe) < 0)
@@ -116,9 +116,9 @@ bool Subprocess::Start(SubprocessSet* set, const string& command,
   if (err != 0)
     Fatal("posix_spawnattr_setflags: %s", strerror(err));
 
-  const char* spawned_args[] = { "/bin/sh", "-c", command.c_str(), NULL };
+  const char* spawned_args[] = { "/bin/sh", "-c", cmd.command.c_str(), NULL };
   err = posix_spawn(&pid_, "/bin/sh", &action, &attr,
-        const_cast<char**>(spawned_args), environ);
+        const_cast<char**>(spawned_args), cmd.env ? cmd.env : environ);
   if (err != 0)
     Fatal("posix_spawn: %s", strerror(err));
 
@@ -231,10 +231,9 @@ SubprocessSet::~SubprocessSet() {
     Fatal("sigprocmask: %s", strerror(errno));
 }
 
-Subprocess *SubprocessSet::Add(const string& command, bool use_console,
-                               int extra_fd) {
-  Subprocess *subprocess = new Subprocess(use_console);
-  if (!subprocess->Start(this, command, extra_fd)) {
+Subprocess *SubprocessSet::Add(const EdgeCommand& cmd, int extra_fd) {
+  Subprocess *subprocess = new Subprocess(cmd.use_console);
+  if (!subprocess->Start(this, cmd, extra_fd)) {
     delete subprocess;
     return 0;
   }

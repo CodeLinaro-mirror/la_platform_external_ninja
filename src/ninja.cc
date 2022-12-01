@@ -91,6 +91,9 @@ struct Options {
 
   /// Whether to remain persistent.
   bool persistent;
+
+  /// Experimental, buggy envvar option.
+  bool experimentalEnvvar;
 };
 
 /// The Ninja main() loads up a series of data structures; various tools need
@@ -848,8 +851,11 @@ void PrintCommands(Edge* edge, EdgeSet* seen, PrintCommandMode mode) {
       PrintCommands((*in)->in_edge(), seen, mode);
   }
 
-  if (!edge->is_phony())
-    puts(edge->EvaluateCommand().c_str());
+  if (!edge->is_phony()) {
+    EdgeCommand c;
+    edge->EvaluateCommand(&c);
+    puts(c.command.c_str());
+  }
 }
 
 int NinjaMain::ToolCommands(const Options* options, int argc, char* argv[]) {
@@ -956,18 +962,18 @@ enum EvaluateCommandMode {
   ECM_NORMAL,
   ECM_EXPAND_RSPFILE
 };
-string EvaluateCommandWithRspfile(Edge* edge, EvaluateCommandMode mode) {
-  string command = edge->EvaluateCommand();
+void EvaluateCommandWithRspfile(EdgeCommand* out, Edge* edge, EvaluateCommandMode mode) {
+  edge->EvaluateCommand(out);
   if (mode == ECM_NORMAL)
-    return command;
+    return;
 
   string rspfile = edge->GetUnescapedRspfile();
   if (rspfile.empty())
-    return command;
+    return;
 
-  size_t index = command.find(rspfile);
-  if (index == 0 || index == string::npos || command[index - 1] != '@')
-    return command;
+  size_t index = out->command.find(rspfile);
+  if (index == 0 || index == string::npos || out->command[index - 1] != '@')
+    return;
 
   string rspfile_content = edge->GetBinding("rspfile_content");
   size_t newline_index = 0;
@@ -976,8 +982,7 @@ string EvaluateCommandWithRspfile(Edge* edge, EvaluateCommandMode mode) {
     rspfile_content.replace(newline_index, 1, 1, ' ');
     ++newline_index;
   }
-  command.replace(index - 1, rspfile.length() + 1, rspfile_content);
-  return command;
+  out->command.replace(index - 1, rspfile.length() + 1, rspfile_content);
 }
 
 int NinjaMain::ToolCompilationDatabase(const Options* options, int argc,
@@ -1036,7 +1041,9 @@ int NinjaMain::ToolCompilationDatabase(const Options* options, int argc,
         printf("\n  {\n    \"directory\": \"");
         EncodeJSONString(&cwd[0]);
         printf("\",\n    \"command\": \"");
-        EncodeJSONString(EvaluateCommandWithRspfile(*e, eval_mode).c_str());
+        EdgeCommand cmd;
+        EvaluateCommandWithRspfile(&cmd, *e, eval_mode);
+        EncodeJSONString(cmd.command.c_str());
         printf("\",\n    \"file\": \"");
         EncodeJSONString((*e)->inputs_[0]->path().c_str());
         printf("\",\n    \"output\": \"");
@@ -1498,6 +1505,7 @@ int ReadFlags(int* argc, char*** argv,
     OPT_FRONTEND = 2,
     OPT_FRONTEND_FILE = 3,
     OPT_QUIET = 4,
+    OPT_EXPERIMENTALENVVAR = 5,
   };
   const option kLongOptions[] = {
 #ifndef _WIN32
@@ -1508,6 +1516,7 @@ int ReadFlags(int* argc, char*** argv,
     { "version", no_argument, NULL, OPT_VERSION },
     { "verbose", no_argument, NULL, 'v' },
     { "quiet", no_argument, NULL, OPT_QUIET },
+    { "experimentalEnvvar", no_argument, NULL, OPT_EXPERIMENTALENVVAR },
     { NULL, 0, NULL, 0 }
   };
 
@@ -1590,6 +1599,9 @@ int ReadFlags(int* argc, char*** argv,
         break;
       case OPT_FRONTEND_FILE:
         config->frontend_file = optarg;
+        break;
+      case OPT_EXPERIMENTALENVVAR:
+        options->experimentalEnvvar = true;
         break;
       case 'h':
       default:
@@ -1690,6 +1702,7 @@ NORETURN void real_main(int argc, char** argv) {
     if (options.phony_cycle_should_err) {
       parser_opts.phony_cycle_action_ = kPhonyCycleActionError;
     }
+    parser_opts.experimentalEnvvar = options.experimentalEnvvar;
     ManifestParser parser(&ninja.state_, &ninja.disk_interface_, parser_opts);
     string err;
     if (!parser.Load(options.input_file, &err)) {

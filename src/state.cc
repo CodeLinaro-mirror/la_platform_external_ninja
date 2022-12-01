@@ -85,6 +85,7 @@ bool State::AddPool(Pool* pool) {
 Edge* State::AddEdge(const Rule* rule) {
   Edge* edge = new Edge();
   edge->pos_.base = new BasePosition {{ &root_scope_, 0 }}; // leaked
+  edge->onPosResolvedToScope(&root_scope_);
   edge->rule_ = rule;
   edge->pool_ = &State::kDefaultPool;
   edge->id_ = edges_.size();

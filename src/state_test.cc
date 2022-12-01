@@ -30,7 +30,9 @@ TEST(State, Basic) {
   state.AddIn(edge, state.root_scope_.GlobalPath("in2"), 0);
   state.AddOut(edge, state.root_scope_.GlobalPath("out"), 0);
 
-  EXPECT_EQ("cat in1 in2 > out", edge->EvaluateCommand());
+  EdgeCommand cmd;
+  edge->EvaluateCommand(&cmd);
+  EXPECT_EQ("cat in1 in2 > out", cmd.command);
 
   EXPECT_FALSE(state.GetNode(state.root_scope_.GlobalPath("in1"), 0)->dirty());
   EXPECT_FALSE(state.GetNode(state.root_scope_.GlobalPath("in2"), 0)->dirty());

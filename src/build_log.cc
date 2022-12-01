@@ -163,8 +163,9 @@ bool BuildLog::OpenForWrite(const string& path, const BuildLogUser& user,
 
 bool BuildLog::RecordCommand(Edge* edge, int start_time, int end_time,
                              TimeStamp mtime) {
-  string command = edge->EvaluateCommand(true);
-  uint64_t command_hash = LogEntry::HashCommand(command);
+  EdgeCommand c;
+  edge->EvaluateCommand(&c, true);
+  uint64_t command_hash = LogEntry::HashCommand(c.command);
   for (Node* out : edge->outputs_) {
     HashedStrView path = out->globalPath().h;
     LogEntry* log_entry;

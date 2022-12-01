@@ -73,7 +73,7 @@ HANDLE Subprocess::SetupPipe(HANDLE ioport) {
   return output_write_child;
 }
 
-bool Subprocess::Start(SubprocessSet* set, const string& command) {
+bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd) {
   // chdir is passed to CreateProcessA. If it is NULL, no chdir is needed.
   //
   // BUG: CreateProcessA does the search for argv[0] before changing to chdir
@@ -104,7 +104,7 @@ bool Subprocess::Start(SubprocessSet* set, const string& command) {
       cleanedCommand = command.substr(endCD + delimSize);
     }
   } else {
-    cleanedCommand = command;
+    cleanedCommand = cmd.command;
   }
 
   HANDLE child_pipe = SetupPipe(set->ioport_);
@@ -143,7 +143,7 @@ bool Subprocess::Start(SubprocessSet* set, const string& command) {
   // lines greater than 8,191 chars.
   if (!CreateProcessA(NULL, (char*)cleanedCommand.c_str(), NULL, NULL,
                       /* inherit handles */ TRUE, process_flags,
-                      NULL, chdir,
+                      cmd.env, chdir,
                       &startup_info, &process_info)) {
     DWORD error = GetLastError();
     if (chdir) {
@@ -268,9 +268,9 @@ BOOL WINAPI SubprocessSet::NotifyInterrupted(DWORD dwCtrlType) {
   return FALSE;
 }
 
-Subprocess *SubprocessSet::Add(const string& command, bool use_console) {
-  Subprocess *subprocess = new Subprocess(use_console);
-  if (!subprocess->Start(this, command)) {
+Subprocess *SubprocessSet::Add(const EdgeCommand& cmd) {
+  Subprocess *subprocess = new Subprocess(cmd.use_console);
+  if (!subprocess->Start(this, cmd)) {
     delete subprocess;
     return 0;
   }

@@ -151,14 +151,20 @@ struct Scope {
   // Simple constructor for a new Scope.
   Scope(ScopePosition parent)
       : parent_(parent)
+      , cmdEnviron_(NULL)
       , chdirParent_(nullptr)
       , chdir_(parent.scope ? parent.scope->chdir_ : "") {}
 
   // Constructor which creates a new Scope that:
   //  - Does not search a parent ScopePosition when evaluating variables.
   //  - Does know the parent Scope for traversing the directory tree.
-  Scope(Scope* chdirParent, std::string chdir)
-      : parent_(nullptr), chdirParent_(chdirParent), chdir_(chdir) {}
+  Scope(Scope* chdirParent, std::string chdir, char** cmdEnviron)
+      : parent_(nullptr)
+      , cmdEnviron_(cmdEnviron)
+      , chdirParent_(chdirParent)
+      , chdir_(chdir) {}
+
+  ~Scope();
 
   /// Preallocate space in the hash tables so adding bindings and rules is more
   /// efficient.
@@ -238,10 +244,14 @@ struct Scope {
   // Used for testing.
   Scope* parent() const { return parent_.scope; }
 
+  char** getCmdEnviron() const { return cmdEnviron_; }
+
 private:
   /// The position of this scope within its parent scope.
   /// (ScopePosition::parent will be nullptr for the root scope.)
   ScopePosition parent_;
+
+  char** cmdEnviron_ = NULL;
 
   // A Scope with chdir_ set to non-empty must not allow variable evaluation
   // to continue beyond its scope, so parent_ (above) is set to nullptr.

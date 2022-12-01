@@ -35,6 +35,7 @@ using namespace std;
 #  endif
 #endif
 
+#include "graph.h"
 #include "exit_status.h"
 
 /// Subprocess wraps a single async subprocess.  It is entirely
@@ -58,7 +59,7 @@ struct Subprocess {
 
  private:
   Subprocess(bool use_console);
-  bool Start(struct SubprocessSet* set, const string& command, int extra_fd);
+  bool Start(struct SubprocessSet* set, const EdgeCommand& cmd, int extra_fd);
   void OnPipeReady();
 
   string buf_;
@@ -90,8 +91,7 @@ struct SubprocessSet {
   SubprocessSet();
   ~SubprocessSet();
 
-  Subprocess* Add(const string& command, bool use_console = false,
-                  int extra_fd = -1);
+  Subprocess* Add(const EdgeCommand& cmd, int extra_fd = -1);
   bool DoWork();
   Subprocess* NextFinished();
   void Clear();

@@ -297,6 +297,12 @@ typedef std::vector<Node*> DepPath;
 // Find all dependency paths between an input and output node.
 std::vector<DepPath> GetDependencyPaths(Node* in, Node* out);
 
+struct EdgeCommand {
+  std::string command;
+  bool use_console = false;
+  char** env = NULL;
+};
+
 struct EdgeEval {
   enum EvalPhase { kParseTime, kFinalScope };
   enum EscapeKind { kShellEscape, kDoNotEscape };
@@ -362,7 +368,7 @@ struct Edge {
   /// Convenience method. This method must not be called from a worker thread,
   /// because it could abort with a fatal error. (For consistency with other
   /// Get*/Evaluate* methods, a better name might be GetCommand.)
-  std::string EvaluateCommand(bool incl_rsp_file = false);
+  void EvaluateCommand(EdgeCommand* out, bool incl_rsp_file = false);
 
   /// Attempts to evaluate info needed for scanning dependencies.
   bool PrecomputeDepScanInfo(std::string* err);
@@ -388,11 +394,26 @@ struct Edge {
                         EdgeEval::EscapeKind escape=EdgeEval::kShellEscape);
 
 private:
+  char** cmdEnviron = NULL;
   std::string GetBindingImpl(const HashedStrView& key,
                              EdgeEval::EvalPhase phase,
                              EdgeEval::EscapeKind escape);
 
 public:
+  /// onPosResolvedToScope updates cmdEnviron from pos_.scope(). Then
+  /// Edge::EvaluateCommand has the cmdEnviron as a precomputed value.
+  void onPosResolvedToScope(Scope* scope) {
+    // This is NULL if scope is the root scope. However, comparing a Scope* to
+    // State::root_scope_ gets hairy (since the global State object is not
+    // yet declared). Instead, always call getCmdEnviron() and it will return
+    // NULL.
+    // (for posix, NULL is checked in Subprocess and environ is given instead.)
+    // (for win32, NULL is passed straight to CreateProcessA which then passes
+    // the environ to the command per its defined behavior.)
+
+    cmdEnviron = scope->getCmdEnviron();
+  }
+
   /// Convenience method for EvaluateVariable. On failure, it issues a fatal
   /// error. This function must not be called from a worker thread because:
   ///  - Error reporting should be deterministic, and
