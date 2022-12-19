@@ -1655,8 +1655,8 @@ TEST_F(ParserTest, IncludeUsingAVariable) {
 "path = nonexistent.ninja\n"));
 }
 
-TEST_F(ParserTest, UnscopedPool) {
-  // Pools aren't scoped.
+TEST_F(ParserTest, CrossFilePoolScope) {
+  // Pool scope is across all ninja files within this chdir.
   fs_.Create("foo.ninja", "pool link\n"
                           "  depth = 3\n");
   ASSERT_NO_FATAL_FAILURE(AssertParse(

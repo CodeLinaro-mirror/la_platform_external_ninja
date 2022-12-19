@@ -74,12 +74,56 @@ State::State() {
   root_scope_.AllocDecls(1);
 
   root_scope_.AddAllBuiltinRules();
-  AddPool(&kDefaultPool);
-  AddPool(&kConsolePool);
+  AddPool(&kDefaultPool, &root_scope_);
+  AddPool(&kConsolePool, &root_scope_);
 }
 
-bool State::AddPool(Pool* pool) {
-  return pools_.insert({ pool->name_hashed(), pool }).second;
+bool State::AddPool(Pool* pool, Scope* scope) {
+  // Find root scope of this subninja chdir.
+  while (scope->parent() != nullptr) {
+    scope = scope->parent();
+  }
+  pool->parent_ = scope;
+
+  auto r = pools_.insert({ pool->name_hashed(), {} });
+  if (r.second) {
+    // This pool has a unique name, so a new SameNamePools was inserted.
+    bool poolUnique = r.first->second.pool.insert({ scope, pool }).second;
+    if (!poolUnique) {
+      Fatal("SameNamePools should be empty, but says it has a duplicate.");
+      return false;
+    }
+    return true;
+  }
+
+  // This pool does not have a unique name. Nothing was changed in pools_.
+  SameNamePools& sims = r.first->second;
+  auto i = sims.pool.find(scope);
+  if (i != sims.pool.end()) {
+    return false;  // Found a duplicate in the same subninja chdir.
+  }
+  // This pool is unique within its subninja chdir.
+  // If it has the same depth as any pool in r.first.pool, merge it.
+  for (i = sims.pool.begin(); i != sims.pool.end(); ++i) {
+    if (i->second->depth_ == pool->depth_) {
+      // The Pool* pool is not used. The previous Pool* in i->second is kept.
+      // However, the previous Pool* is now available in this scope.
+      bool poolUnique = sims.pool.insert({ scope, i->second }).second;
+      if (!poolUnique) {
+        Fatal("SameNamePools should not have a duplicate, but does.");
+        return false;
+      }
+      return true;
+    }
+  }
+
+  // This pool is unique within its subninja chdir and unique globally.
+  bool poolUnique = sims.pool.insert({ scope, pool }).second;
+  if (!poolUnique) {
+    Fatal("SameNamePools did not accept another pool.");
+    return false;
+  }
+  return true;
 }
 
 Edge* State::AddEdge(const Rule* rule) {
@@ -93,16 +137,31 @@ Edge* State::AddEdge(const Rule* rule) {
   return edge;
 }
 
-Pool* State::LookupPool(const HashedStrView& pool_name) {
+Pool* State::LookupPool(const HashedStrView& pool_name, const ScopePosition edge_pos) {
+  if (edge_pos.scope == nullptr) {
+    Fatal("LookupPool(%s): edge_pos.scope is NULL",
+          pool_name.str_view().AsString().c_str());
+    return nullptr;
+  }
+  // Find root scope of this subninja chdir.
+  Scope* parent = edge_pos.scope;
+  while (parent->parent() != nullptr) {
+    parent = parent->parent();
+  }
+
   auto i = pools_.find(pool_name);
   if (i == pools_.end())
     return nullptr;
-  return i->second;
+  auto j = i->second.pool.find(parent);
+  if (j == i->second.pool.end()) {
+    return nullptr;
+  }
+  return j->second;
 }
 
-Pool* State::LookupPoolAtPos(const HashedStrView& pool_name,
+Pool* State::LookupPoolAtPos(const HashedStrView& pool_name, const ScopePosition edge_pos,
                              DeclIndex dfs_location) {
-  Pool* result = LookupPool(pool_name);
+  Pool* result = LookupPool(pool_name, edge_pos);
   if (result == nullptr) return nullptr;
   return result->dfs_location() < dfs_location ? result : nullptr;
 }
@@ -222,8 +281,10 @@ void State::Dump() {
   if (!pools_.empty()) {
     printf("resource_pools:\n");
     for (auto it = pools_.begin(); it != pools_.end(); ++it) {
-      if (!it->second->name().empty()) {
-        it->second->Dump();
+      for (auto sameIt = it->second.pool.begin(); sameIt != it->second.pool.end(); ++sameIt) {
+        if (!sameIt->second->name().empty()) {
+          sameIt->second->Dump();
+        }
       }
     }
   }

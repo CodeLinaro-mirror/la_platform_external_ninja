@@ -1564,7 +1564,10 @@ TEST_F(BuildTest, PoolEdgesReadyButNotWanted) {
 
   State save_state;
   RebuildTarget("final.stamp", manifest, NULL, NULL, &save_state);
-  EXPECT_GE(save_state.LookupPool("some_pool")->current_use(), 0);
+  Pool* pool = save_state.LookupPool("some_pool",
+                                     save_state.edges_[0]->pos_.scope_pos());
+  ASSERT_TRUE(pool != nullptr);
+  EXPECT_GE(pool->current_use(), 0);
 }
 
 struct BuildWithLogTest : public BuildTest {

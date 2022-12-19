@@ -144,7 +144,7 @@ private:
   bool LoadIncludeOrSubninja(Include& include, const LoadedFile& file,
                              Scope* scope, std::vector<Clump*>* out_clumps,
                              std::string* err);
-  bool HandlePool(Pool* pool, const LoadedFile& file, std::string* err);
+  bool HandlePool(Pool* pool, Scope* scope, const LoadedFile& file, std::string* err);
   bool HandleClump(Clump* clump, const LoadedFile& file, Scope* scope,
                    std::string* err);
 
@@ -275,7 +275,7 @@ bool DfsParser::LoadIncludeOrSubninja(Include& include, const LoadedFile& file,
   return true;
 }
 
-bool DfsParser::HandlePool(Pool* pool, const LoadedFile& file,
+bool DfsParser::HandlePool(Pool* pool, Scope* scope, const LoadedFile& file,
                            std::string* err) {
   std::string depth_string;
   EvaluateBindingInScope(&depth_string, pool->parse_state_.depth,
@@ -285,7 +285,7 @@ bool DfsParser::HandlePool(Pool* pool, const LoadedFile& file,
     return DecorateError(file, pool->parse_state_.depth_diag_pos,
                          "invalid pool depth", err);
   }
-  if (!state_->AddPool(pool)) {
+  if (!state_->AddPool(pool, scope)) {
     return DecorateError(file, pool->parse_state_.pool_name_diag_pos,
                          "duplicate pool '" + pool->name() + "'", err);
   }
@@ -319,7 +319,7 @@ bool DfsParser::HandleClump(Clump* clump, const LoadedFile& file, Scope* scope,
     }
   }
   for (Pool* pool : clump->pools_) {
-    if (!HandlePool(pool, file, err)) {
+    if (!HandlePool(pool, scope, file, err)) {
       return false;
     }
   }
@@ -453,7 +453,7 @@ bool ManifestLoader::AddEdgeToGraph(Edge* edge, const LoadedFile& file,
   if (pool_name.empty()) {
     edge->pool_ = &State::kDefaultPool;
   } else {
-    edge->pool_ = state_->LookupPoolAtPos(pool_name, edge->pos_.dfs_location());
+    edge->pool_ = state_->LookupPoolAtPos(pool_name, edge_pos, edge->pos_.dfs_location());
     if (edge->pool_ == nullptr) {
       return DecorateError(file, edge->parse_state_.final_diag_pos,
                            "unknown pool name '" + pool_name + "'", err);

@@ -77,6 +77,7 @@ struct Pool {
   HashedStr name_;
   int depth_ = 0;
   RelativePosition pos_;
+  Scope* parent_;
 
   // Temporary fields used only during manifest parsing.
   struct {
@@ -103,6 +104,29 @@ private:
   DelayedEdges delayed_;
 };
 
+// SameNamePools contains all pools with the same name.
+// Note: Pools cannot have the same name, except in the very rare case
+// that a subninja chdir invokes an entirely separate build which then
+// has a pool with the same name.
+//
+// Even then, the pools are silently merged across subninja chdirs, unless the
+// depth value does not match. The special predefined 'console' pool will
+// always have a depth of 1, so references to it get merged by the same logic.
+//
+// Pools are *not* supposed to break the build due to these subtle nuances of
+// when they are merged and when they are not. Pools are supposed to be a
+// useful decorator that optimizes the build for some rare rules that need to
+// have *less* parallelism. Sometimes the different trees being built cannot
+// avoid having duplicate pool names because the sources are maintained by
+// different parties. The goal then is to *not* break the build, by either
+// silently merging pools as much as possible, and otherwise allowing pools
+// with the same name to silently coexist.
+//
+// Each pool must have a unique tuple ( Scope* Pool::parent_, HashedStr name_ )
+struct SameNamePools {
+  std::unordered_map<Scope*, Pool*> pool;
+};
+
 /// Global state (file status) for a single run.
 struct State {
   /// The built-in pools and rules use this dummy built-in scope to initialize
@@ -116,14 +140,17 @@ struct State {
   State();
 
   void AddBuiltinRule(Rule* rule);
-  bool AddPool(Pool* pool);
+  bool AddPool(Pool* pool, Scope* scope);
   Edge* AddEdge(const Rule* rule);
-  Pool* LookupPool(const HashedStrView& pool_name);
+  Pool* LookupPool(const HashedStrView& pool_name,
+                   const ScopePosition edge_pos);
 
   /// Lookup a pool at a DFS position. Pools don't respect scopes. A pool's name
   /// must be unique across the entire manifest, and it must be declared before
   /// an edge references it.
-  Pool* LookupPoolAtPos(const HashedStrView& pool_name, DeclIndex dfs_location);
+  Pool* LookupPoolAtPos(const HashedStrView& pool_name,
+                        const ScopePosition edge_pos,
+                        DeclIndex dfs_location);
 
   /// Creates the node if it doesn't exist. Never returns nullptr. Thread-safe.
   /// 'path' must be the Scope::GlobalPath(), globally unique.
@@ -166,7 +193,7 @@ struct State {
   Paths paths_;
 
   /// All the pools used in the graph.
-  std::unordered_map<HashedStrView, Pool*> pools_;
+  std::unordered_map<HashedStrView, SameNamePools> pools_;
 
   /// All the edges of the graph.
   vector<Edge*> edges_;
