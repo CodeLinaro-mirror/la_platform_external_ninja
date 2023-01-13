@@ -211,6 +211,14 @@ bool DfsParser::HandleInclude(Include& include, const LoadedFile& file,
         dst++;
       }
       for (auto i = include.envvar.begin(); i != include.envvar.end(); i++) {
+        if (i->second.empty()) {
+          // An empty variable always is fully unset.
+          //
+          // bash may complain (bash has an option, set -u, as a form of lint for this)
+          // and ninja does not provide a facility for a variable set to "" (empty string)
+          // since "" is used to signal to ninja the variable must be unset.
+          continue;
+        }
         string out = i->first + "=" + i->second;
         *dst = new char[out.size() + 1];
         strncpy(*dst, out.c_str(), out.size());

@@ -1138,7 +1138,8 @@ TEST_F(ParserTest, SubNinjaChdirExperimentalEnvvarSuccess) {
       "var = outer\n"
       "build $builddir/outer: varref\n"
       "subninja b/foo.ninja\n"
-      "  env SubNinjaChdirExperimentalEnvvarSuccess = success\n"
+      "  env SubNinjaChdirExperimentalEnvvarSuccess =    success   \n"
+      "  env SubNinjaChdirExperimentalEnvvarWithPaths =    path/to/file   \n"
       "  chdir = b\n"
       "build $builddir/outer2: varref\n", &err));
   ASSERT_EQ(err, "");
@@ -1163,15 +1164,72 @@ TEST_F(ParserTest, SubNinjaChdirExperimentalEnvvarSuccess) {
   EdgeCommand cmd1;
   state.edges_[1]->EvaluateCommand(&cmd1);
   ASSERT_NE(cmd1.env, NULL);
-  bool found = false;
+  bool found1 = false;
+  bool found2 = false;
   for (char** p = cmd1.env; *p; p++) {
     std::string var = *p;
     if (var.find("SubNinjaChdirExperimentalEnvvarSuccess") == 0) {
-      found = true;
+      found1 = true;
       ASSERT_EQ(var, "SubNinjaChdirExperimentalEnvvarSuccess=success");
+    } else if (var.find("SubNinjaChdirExperimentalEnvvarWithPaths") == 0) {
+      found2 = true;
+      ASSERT_EQ(var, "SubNinjaChdirExperimentalEnvvarWithPaths=path/to/file");
     }
   }
-  ASSERT_TRUE(found && "env var \"SubNinjaChdirExperimentalEnvvarSuccess\" not found");
+  ASSERT_TRUE(found1 && "env var \"SubNinjaChdirExperimentalEnvvarSuccess\" not found");
+  ASSERT_TRUE(found2 && "env var \"SubNinjaChdirExperimentalEnvvarWithPaths\" not found");
+}
+
+TEST_F(ParserTest, SubNinjaChdirExperimentalEnvvarUnset) {
+  EXPECT_TRUE(fs_.MakeDir("b"));
+  fs_.Create("b/foo.ninja",
+    "var = inner\n"
+    "rule innerrule\n"
+    "  command = foo \"$var\" \"$in\" \"$out\"\n"
+    "build $builddir/inner: innerrule abc\n"
+    "build inner2: innerrule def\n");
+
+  ManifestParserOptions parser_opts;
+  parser_opts.experimentalEnvvar = true;
+  ManifestParser parser(&state, &fs_, parser_opts);
+  string err;
+  ASSERT_TRUE(parser.ParseTest(
+      "builddir = a/\n"
+      "rule varref\n"
+      "  command = varref $var\n"
+      "var = outer\n"
+      "build $builddir/outer: varref\n"
+      "subninja b/foo.ninja\n"
+      "  env SubNinjaChdirExperimentalEnvvarSuccess =      \n"
+      "  chdir = b\n"
+      "build $builddir/outer2: varref\n", &err));
+  ASSERT_EQ(err, "");
+
+  ASSERT_EQ(1u, fs_.files_read_.size());
+  ASSERT_EQ("/", VerifyCwd(fs_));
+
+  EXPECT_EQ("b/foo.ninja", fs_.files_read_[0]);
+  HashedStrView outer("a/outer");
+  Node* outerNode = state.LookupNode(GlobalPathStr{outer});
+  EXPECT_TRUE(outerNode);
+  HashedStrView outer2("a/outer2");
+  EXPECT_TRUE(state.LookupNode(GlobalPathStr{outer2}));
+
+  // Verify that the scope does know it is a chdir.
+  ASSERT_EQ(state.edges_[1]->pos_.scope()->chdir(), "b/");
+  // Verify parent ninja file does not customize environment.
+  EdgeCommand cmd0;
+  state.edges_[0]->EvaluateCommand(&cmd0);
+  ASSERT_EQ(cmd0.env, NULL);
+  // Verify subninja chdir with custom environment.
+  EdgeCommand cmd1;
+  state.edges_[1]->EvaluateCommand(&cmd1);
+  ASSERT_NE(cmd1.env, NULL);
+  for (char** p = cmd1.env; *p; p++) {
+    std::string var = *p;
+    ASSERT_TRUE(var.find("SubNinjaChdirExperimentalEnvvarSuccess") == std::string::npos &&
+        "unsetting env var should delete it");
+  }
 }
 
 TEST_F(ParserTest, TwoChdirs) {
@@ -1341,6 +1399,76 @@ TEST_F(ParserTest, SubNinjaErrors) {
               "                  ^ near here"
               , err);
   }
+}
+
+TEST_F(ParserTest, IdenticalPoolsInSubninjas) {
+  // Test that identical pools are merged in subninjas.
+  fs_.MakeDir("test-a");
+  fs_.Create("test-a/a-link.ninja", "pool link\n"
+                                    "  depth = 3\n");
+  fs_.Create("test-a/a.ninja",
+    "subninja a-link.ninja\n"
+    "rule cat\n"
+    "  command = cat $in > $out\n"
+    "  pool = link\n"
+    "build out2: cat in1\n"
+    "build out1: cat in2\n"
+    "build final: cat out1\n"
+    "default final\n");
+
+  fs_.Create("haslink.ninja", "pool link\n"
+                              "  depth = 3\n");
+  ASSERT_NO_FATAL_FAILURE(AssertParse(
+    "rule cat\n"
+    "  command = cat $in > $out\n"
+    "  pool = link\n"
+    "subninja test-a/a.ninja\n"
+    "  chdir = test-a\n"
+    "subninja haslink.ninja\n"
+    "build a: cat b | test-a/final\n"));
+
+  Edge* edge = GetNode("a")->in_edge();
+  Pool* pool1 = state.LookupPool("link", edge->pos_.scope_pos());
+  ASSERT_TRUE(pool1 != nullptr);
+  edge = GetNode("test-a/final")->in_edge();
+  Pool* pool2 = state.LookupPool("link", edge->pos_.scope_pos());
+  ASSERT_TRUE(pool2 != nullptr);
+  EXPECT_EQ(pool1, pool2);
+}
+
+TEST_F(ParserTest, SameNamePoolsInSubninjas) {
+  // Test that non-identical pools are not merged in subninjas.
+  fs_.MakeDir("test-a");
+  fs_.Create("test-a/a-link.ninja", "pool link\n"
+                                    "  depth = 2\n");
+  fs_.Create("test-a/a.ninja",
+    "subninja a-link.ninja\n"
+    "rule cat\n"
+    "  command = cat $in > $out\n"
+    "  pool = link\n"
+    "build out2: cat in1\n"
+    "build out1: cat in2\n"
+    "build final: cat out1\n"
+    "default final\n");
+
+  fs_.Create("haslink.ninja", "pool link\n"
+                              "  depth = 7\n");
+  ASSERT_NO_FATAL_FAILURE(AssertParse(
+    "rule cat\n"
+    "  command = cat $in > $out\n"
+    "  pool = link\n"
+    "subninja test-a/a.ninja\n"
+    "  chdir = test-a\n"
+    "subninja haslink.ninja\n"
+    "build a: cat b | test-a/final\n"));
+
+  Edge* edge = GetNode("a")->in_edge();
+  Pool* pool1 = state.LookupPool("link", edge->pos_.scope_pos());
+  ASSERT_TRUE(pool1 != nullptr);
+  edge = GetNode("test-a/final")->in_edge();
+  Pool* pool2 = state.LookupPool("link", edge->pos_.scope_pos());
+  ASSERT_TRUE(pool2 != nullptr);
+  EXPECT_NE(pool1, pool2);
 }
 
 TEST_F(ParserTest, DuplicateRuleInDifferentSubninjas) {
@@ -1678,6 +1806,26 @@ TEST_F(ParserTest, PoolDeclaredAfterUse) {
                                 "pool link\n"
                                 "  depth = 3\n", &err));
   EXPECT_EQ("input:5: unknown pool name 'link'\n", err);
+}
+
+TEST_F(ParserTest, PoolDuplicate) {
+  // A pool must be declared before an edge that uses it.
+  fs_.Create("foo.ninja", "pool link\n"
+                          "  depth = 3\n");
+  ManifestParser parser(&state, &fs_);
+  std::string err;
+  EXPECT_FALSE(parser.ParseTest(
+    "pool link\n"
+    "  depth = 5\n"
+    "rule cat\n"
+    "  command = cat $in > $out\n"
+    "  pool = link\n"
+    "subninja foo.ninja\n"
+    "build a: cat b\n", &err));
+  EXPECT_EQ(err,
+    "foo.ninja:1: duplicate pool 'link'\n"
+    "pool link\n"
+    "         ^ near here");
 }
 
 TEST_F(ParserTest, DefaultReferencesEdgeInput) {

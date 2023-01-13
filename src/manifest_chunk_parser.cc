@@ -134,21 +134,35 @@ bool ChunkParser::ParseFileInclude(bool new_scope) {
           }
           StringPiece key;
           StringPiece val;
-          if (lexer_.ReadIdent(&key)) {
-            if (!key.compare("chdir")) {
-              return LexerError("reserved word chdir: \"env chdir =\"");
-            }
-            if (ExpectToken(Lexer::EQUALS) && lexer_.ReadIdent(&val)) {
-              auto p = include->envvar.emplace(key.AsString(), val.AsString());
-              if (!p.second) {
-                return LexerError("duplicate env var");
-              }
-              if (ExpectToken(Lexer::NEWLINE) && ExpectToken(Lexer::INDENT)) {
-                continue;
-              }
-            }
+          if (!lexer_.ReadIdent(&key)) {
+            return LexerError(
+              "expected \"env VAR = value1 value2 value3\", only got \"env\"");
           }
-          return LexerError("looking for chdir, did not find \"env VAR = value1 value2 value3\"");
+          if (!key.compare("chdir")) {
+            return LexerError("reserved word chdir: \"env chdir =\"");
+          }
+          if (!ExpectToken(Lexer::EQUALS)) {
+            return false;  // ExpectToken() has already set Lexer error
+          }
+          std::string err;
+          if (!lexer_.ReadBindingValue(&val, &err)) {
+            return OutError(err);
+          }
+
+          const char* ws = " \t\r\n";
+          std::string valstr = val.AsString();
+          valstr.erase(valstr.find_last_not_of(ws) + 1);
+          valstr.erase(0, valstr.find_first_not_of(ws));
+
+          auto p = include->envvar.emplace(key.AsString(), valstr);
+          if (!p.second) {
+            return LexerError("duplicate env var");
+          }
+          if (!lexer_.PeekToken(Lexer::INDENT)) {
+            return LexerError(
+                "got \"env " + key.AsString() + " = " + valstr + "\" but missing chdir.");
+          }
+          continue;  // Successfully parsed an env statement.
         }
       }
       return LexerError("only 'chdir =' is allowed after 'subninja' line.");
