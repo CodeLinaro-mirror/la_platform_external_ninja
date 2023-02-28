@@ -151,7 +151,7 @@ struct Scope {
   // Simple constructor for a new Scope.
   Scope(ScopePosition parent)
       : parent_(parent)
-      , cmdEnviron_(NULL)
+      , cmdEnviron_(parent.scope ? parent.scope->cmdEnviron_ : NULL)
       , chdirParent_(nullptr)
       , chdir_(parent.scope ? parent.scope->chdir_ : "") {}
 
