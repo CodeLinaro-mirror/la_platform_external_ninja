@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <map>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <string>
 #include <vector>
@@ -172,7 +173,8 @@ struct BuildConfig {
                   output_directory_should_err(false),
                   missing_output_file_should_err(false),
                   old_output_should_err(false),
-                  pre_remove_output_files(false) {}
+                  pre_remove_output_files(false),
+                  weight_list_path(std::nullopt) {}
 
   enum Verbosity {
     NORMAL,
@@ -221,6 +223,16 @@ struct BuildConfig {
 
   /// Whether to remove outputs before executing rule commands
   bool pre_remove_output_files;
+
+  /// A file path which includes a weight list for modules.
+  /// A priority list is a csv file format and it has two fields, output global path and weight.
+  /// Weight is proportional to execution time of an edge for a node.
+  /// And it is used to set a priority of edges by a critical path based on weight.
+  /// For example,
+  ///   out/lib/foo.so,2
+  ///   out/bin/bar,5
+  /// Note that the default weight is 1 for a module which isn't included in the list.
+  std::optional<std::string> weight_list_path;
 };
 
 /// Builder wraps the build process: starting commands, updating status.
@@ -276,6 +288,8 @@ struct Builder {
    bool ExtractDeps(CommandRunner::Result* result, const string& deps_type,
                     const string& deps_prefix, vector<Node*>* deps_nodes,
                     string* err);
+
+  void RefreshPriority(const std::vector<Node*>& nodes);
 
   /// Map of running edge to time the edge started running.
   typedef map<Edge*, int> RunningEdgeMap;

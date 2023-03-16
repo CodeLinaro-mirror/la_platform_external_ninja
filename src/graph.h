@@ -464,6 +464,7 @@ public:
   VisitMark mark_ = VisitNone;
   bool precomputed_dirtiness_ = false;
   size_t id_ = 0;
+  int64_t priority_ = 0;
   bool outputs_ready_ = false;
   bool deps_loaded_ = false;
   bool deps_missing_ = false;
@@ -474,6 +475,11 @@ public:
   const Rule& rule() const { return *rule_; }
   Pool* pool() const { return pool_; }
   int weight() const { return 1; }
+  // Priority is a value used to determine which modules should be built earlier than others.
+  // The default value is 1 and can be updated by a priority list file.
+  // After that, it is also updated from dependents.
+  // The final priority would be the sum of the critical path between this edge and the target edge.
+  int64_t priority() const { return priority_; }
   bool outputs_ready() const { return outputs_ready_; }
 
   // There are three types of inputs.
@@ -521,7 +527,13 @@ public:
 
 struct EdgeCmp {
   bool operator()(const Edge* a, const Edge* b) const {
-    return a->id_ < b->id_;
+    if (a->priority() == b->priority()) {
+      // Order by id ascending to preserve the original behavior if they have
+      // the same priority.
+      return a->id_ < b->id_;
+    }
+    // Order by priority descending to run prioritized edges earlier.
+    return a->priority() > b->priority();
   }
 };
 

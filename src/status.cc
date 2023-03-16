@@ -345,7 +345,8 @@ void StatusSerializer::BuildEdgeStarted(Edge* edge, int64_t start_time_millis) {
     edge_started->add_outputs((*it)->globalPath().h.data());
   }
 
-  edge_started->set_desc(edge->GetBinding("description"));
+  const auto& proirity_suffix = config_.weight_list_path ? (" (priority: " + std::to_string(edge->priority()) + ")") : "";
+  edge_started->set_desc(edge->GetBinding("description") + proirity_suffix);
 
   edge_started->set_command(edge->GetBinding("command"));
 

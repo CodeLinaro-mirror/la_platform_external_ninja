@@ -1307,7 +1307,8 @@ bool OptionEnable(const string& name, Options* options, BuildConfig* config) {
 "  usessymlinkoutputs={yes,no}  whether the generate uses 'symlink_outputs' so \n"
 "                             that these warnings work:\n"
 "                                undeclaredsymlinkoutputs\n"
-"  preremoveoutputs={yes,no}  whether to remove outputs before running rule\n");
+"  preremoveoutputs={yes,no}  whether to remove outputs before running rule\n"
+"  usesweightlist={<file path>,no}  whether to prioritize some rules based on weight list from file\n");
     return false;
   } else if (name == "usesphonyoutputs=yes") {
     config->uses_phony_outputs = true;
@@ -1326,6 +1327,12 @@ bool OptionEnable(const string& name, Options* options, BuildConfig* config) {
     return true;
   } else if (name == "preremoveoutputs=no") {
     config->pre_remove_output_files = false;
+    return true;
+  } else if (name == "usesweightlist=no") {
+    config->weight_list_path = std::nullopt;
+    return true;
+  } else if (auto n = name.find("usesweightlist=") != std::string::npos) {
+    config->weight_list_path = name.substr(n + strlen("usesweightlist=" ) - 1);
     return true;
   } else {
     const char* suggestion =

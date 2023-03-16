@@ -16,11 +16,15 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fstream>
 #include <functional>
 #include <set>
 #include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unordered_map>
+#include <unordered_set>
+#include <variant>
 #include <vector>
 
 #ifdef _WIN32
@@ -40,6 +44,7 @@
 #include "disk_interface.h"
 #include "graph.h"
 #include "metrics.h"
+#include "parallel_map.h"
 #include "state.h"
 #include "status.h"
 #include "subprocess.h"
@@ -79,6 +84,40 @@ bool DryRunCommandRunner::WaitForCommand(Result* result) {
    return true;
 }
 
+struct WeightDataSource {
+public:
+  void Put(std::string&& key, int64_t value) {
+    const auto& [it, inserted] = key_data_.emplace(std::move(key));
+    if (inserted) {
+      map_data_.try_emplace(*it, value);
+    } else {
+      map_data_.find(*it)->second = value;
+    }
+  }
+
+  std::optional<int64_t> Get(const HashedStrView& key) const {
+    if (auto it = map_data_.find(key); it != map_data_.end()) {
+      return it->second;
+    }
+    return {};
+  }
+private:
+  std::unordered_set<HashedStr> key_data_;
+  std::unordered_map<HashedStrView, int64_t> map_data_;
+};
+
+// Get weight from data source, it isn't related to Edge.weight because
+// Edge.weight is used for task distribution across pools which we don't
+// want to do that in this context.
+int64_t GetWeight(const WeightDataSource& data_source, Edge* edge) {
+  if (!edge || edge->outputs_ready()) {
+    return 0;
+  }
+  if (edge->is_phony()) {
+    return 1;
+  }
+  return data_source.Get(edge->outputs_[0]->globalPath().h).value_or(1);
+}
 }  // namespace
 
 Plan::Plan(Builder* builder)
@@ -590,10 +629,97 @@ Node* Builder::AddTarget(const string& name, string* err) {
   return node;
 }
 
+void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
+  METRIC_RECORD("RefreshPriority");
+  WeightDataSource data_source;
+  if (config_.weight_list_path) {
+    std::ifstream file(config_.weight_list_path.value());
+    std::string line;
+    while (std::getline(file, line)) {
+      if (auto pos = line.find_first_of(','); pos != string::npos) {
+        auto path = line.substr(0, pos);
+        auto raw_weight = line.substr(pos + 1);
+        char* idx;
+        int64_t weight = std::strtoll(raw_weight.c_str(), &idx, 10);
+        if (idx != nullptr) {
+          data_source.Put(std::move(path), weight);
+        }
+      }
+    }
+  } else {
+    Fatal("data_source should exist here.");
+  }
+  std::vector<std::pair<Edge*, int64_t>> todos;
+  std::unique_ptr<ThreadPool> thread_pool = CreateThreadPool();
+  for (auto* node: start_nodes) {
+    if (node && node->in_edge()) {
+      todos.emplace_back(std::make_pair(node->in_edge(), 0));
+    }
+  }
+  while (!todos.empty()) {
+    // Traverse edges in BFS manner, and update each edge's critical path based priority from
+    // accumulated weight.
+    const auto& result = ParallelMap(thread_pool.get(), todos, [&data_source] (auto& p) {
+      // the pair is composed of a visiting edge and accumulated critical path based priority.
+      auto* e = p.first;
+      auto acc = p.second;
+
+      if (!e) {
+        return std::unordered_map<Edge*, int64_t>();
+      }
+      auto run = GetWeight(data_source, e);
+      auto new_priority = run + acc;
+      // Skip if priority isn't updated
+      if (new_priority <= e->priority()) {
+        return std::unordered_map<Edge*, int64_t>();
+      }
+      e->priority_ = new_priority;
+
+      std::set<Edge*, EdgeCmp> next_edges;
+      for (auto* next_node : e->inputs_) {
+        if (!next_node) {
+          continue;
+        }
+        auto* next_e = next_node->in_edge();
+        if (next_e) {
+          next_edges.insert(next_e);
+        }
+      }
+
+      std::unordered_map<Edge*, int64_t> next_todo_map;
+      for (auto* ne : next_edges) {
+        auto next_run = GetWeight(data_source, ne);
+        if (next_run + e->priority() > ne->priority()) {
+          next_todo_map.try_emplace(ne, e->priority());
+        }
+      }
+      return next_todo_map;
+    });
+    todos.clear();
+
+    std::unordered_map<Edge*, int64_t> next_todo_map_total;
+    for (const auto& todo_map : result) {
+      for (const auto& [k, v] : todo_map) {
+        auto [it, inserted] = next_todo_map_total.try_emplace(k, v);
+          if (!inserted) {
+            it->second = std::max(it->second, v);
+          }
+      }
+    }
+    for (const auto& [key, value] : next_todo_map_total) {
+      todos.emplace_back(key, value);
+    }
+  }
+}
+
 bool Builder::AddTargets(const std::vector<Node*> &nodes, string* err) {
   std::vector<Node*> validation_nodes;
   if (!scan_.RecomputeNodesDirty(nodes, &validation_nodes, err))
     return false;
+
+  if (config_.weight_list_path) {
+    RefreshPriority(nodes);
+  }
 
   for (Node* node : nodes) {
     std::string plan_err;
