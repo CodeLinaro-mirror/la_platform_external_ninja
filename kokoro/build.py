@@ -102,7 +102,7 @@ def main() -> None:
     ]
 
     if host == Host.Windows:
-        cmake_conf_args += ['-G', 'Visual Studio 15 2017 Win64']
+        cmake_conf_args += ['-G', 'Visual Studio 17 2022', '-A', 'x64']
     else:
         # Use the Multi-Config generator for consistency with MSVC, which is also multi-config.
         # (e.g. "--config Release" replaces CMAKE_BUILD_TYPE, and there is a "Release" subdir.)
