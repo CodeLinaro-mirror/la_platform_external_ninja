@@ -105,19 +105,6 @@ private:
   std::unordered_set<HashedStr> key_data_;
   std::unordered_map<HashedStrView, int64_t> map_data_;
 };
-
-// Get weight from data source, it isn't related to Edge.weight because
-// Edge.weight is used for task distribution across pools which we don't
-// want to do that in this context.
-int64_t GetWeight(const WeightDataSource& data_source, Edge* edge) {
-  if (!edge || edge->outputs_ready()) {
-    return 0;
-  }
-  if (edge->is_phony()) {
-    return 1;
-  }
-  return data_source.Get(edge->outputs_[0]->globalPath().h).value_or(1);
-}
 }  // namespace
 
 Plan::Plan(Builder* builder)
@@ -646,8 +633,6 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
         }
       }
     }
-  } else {
-    Fatal("data_source should exist here.");
   }
   std::vector<std::pair<Edge*, int64_t>> todos;
   std::unique_ptr<ThreadPool> thread_pool = CreateThreadPool();
@@ -656,10 +641,35 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
       todos.emplace_back(std::make_pair(node->in_edge(), 0));
     }
   }
+
+  // Get weight from data source or ninja log, it isn't related to Edge.weight,
+  // because Edge.weight is used for task distribution across pools which we don't
+  // want to do that in this context.
+  auto weight_getter = [&data_source, this](Edge* edge) -> int64_t {
+    if (!edge || edge->outputs_ready()) {
+      return 0;
+    }
+    if (edge->is_phony()) {
+      return 1;
+    }
+    if (config_.weight_list_path) {
+      return data_source.Get(edge->outputs_[0]->globalPath().h).value_or(1);
+    } else if (config_.ninja_log_as_weight_list) {
+      if (scan_.build_log()) {
+        auto* entry = scan_.build_log()->LookupByOutput(edge->outputs_[0]->globalPath());
+        if (entry) {
+          return entry->end_time - entry->start_time + 1;
+        }
+      }
+      return 1;
+    } else {
+      Fatal("either weight_list_path or ninja_log_as_weight_list should be set.");
+    }
+  };
   while (!todos.empty()) {
     // Traverse edges in BFS manner, and update each edge's critical path based priority from
     // accumulated weight.
-    const auto& result = ParallelMap(thread_pool.get(), todos, [&data_source] (auto& p) {
+    const auto& result = ParallelMap(thread_pool.get(), todos, [&weight_getter] (auto& p) {
       // the pair is composed of a visiting edge and accumulated critical path based priority.
       auto* e = p.first;
       auto acc = p.second;
@@ -667,7 +677,7 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
       if (!e) {
         return std::unordered_map<Edge*, int64_t>();
       }
-      auto run = GetWeight(data_source, e);
+      auto run = weight_getter(e);
       auto new_priority = run + acc;
       // Skip if priority isn't updated
       if (new_priority <= e->priority()) {
@@ -677,7 +687,8 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
 
       std::set<Edge*, EdgeCmp> next_edges;
       for (auto* next_node : e->inputs_) {
-        if (!next_node) {
+        // Skip if the next node isn't dirty because actual build also skips the node.
+        if (!next_node || !next_node->dirty()) {
           continue;
         }
         auto* next_e = next_node->in_edge();
@@ -688,7 +699,7 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
 
       std::unordered_map<Edge*, int64_t> next_todo_map;
       for (auto* ne : next_edges) {
-        auto next_run = GetWeight(data_source, ne);
+        auto next_run = weight_getter(ne);
         if (next_run + e->priority() > ne->priority()) {
           next_todo_map.try_emplace(ne, e->priority());
         }
@@ -717,7 +728,7 @@ bool Builder::AddTargets(const std::vector<Node*> &nodes, string* err) {
   if (!scan_.RecomputeNodesDirty(nodes, &validation_nodes, err))
     return false;
 
-  if (config_.weight_list_path) {
+  if (config_.weight_list_path || config_.ninja_log_as_weight_list) {
     RefreshPriority(nodes);
   }
 

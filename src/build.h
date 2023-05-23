@@ -233,6 +233,8 @@ struct BuildConfig {
   ///   out/bin/bar,5
   /// Note that the default weight is 1 for a module which isn't included in the list.
   std::optional<std::string> weight_list_path;
+
+  bool ninja_log_as_weight_list;
 };
 
 /// Builder wraps the build process: starting commands, updating status.

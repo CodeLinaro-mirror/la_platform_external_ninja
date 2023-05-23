@@ -1308,6 +1308,7 @@ bool OptionEnable(const string& name, Options* options, BuildConfig* config) {
 "                             that these warnings work:\n"
 "                                undeclaredsymlinkoutputs\n"
 "  preremoveoutputs={yes,no}  whether to remove outputs before running rule\n"
+"  usesninjalogasweightlist={yes,no}  whether to use ninja log as source of weight list\n"
 "  usesweightlist={<file path>,no}  whether to prioritize some rules based on weight list from file\n");
     return false;
   } else if (name == "usesphonyoutputs=yes") {
@@ -1333,6 +1334,12 @@ bool OptionEnable(const string& name, Options* options, BuildConfig* config) {
     return true;
   } else if (auto n = name.find("usesweightlist=") != std::string::npos) {
     config->weight_list_path = name.substr(n + strlen("usesweightlist=" ) - 1);
+    return true;
+  } else if (name == "usesninjalogasweightlist=yes") {
+    config->ninja_log_as_weight_list = true;
+    return true;
+  } else if (name == "usesninjalogasweightlist=no") {
+    config->ninja_log_as_weight_list = false;
     return true;
   } else {
     const char* suggestion =
@@ -1625,6 +1632,10 @@ int ReadFlags(int* argc, char*** argv,
 
   if (config->pre_remove_output_files && !config->uses_phony_outputs) {
     Fatal("preremoveoutputs=yes requires usesphonyoutputs=yes.");
+  }
+
+  if (config->weight_list_path && config->ninja_log_as_weight_list) {
+    Fatal("only one of --usesninjalogasweightlist=yes or --usesweightlist=<path> may be specified");
   }
 
   return -1;
