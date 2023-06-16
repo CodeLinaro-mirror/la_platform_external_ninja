@@ -289,6 +289,8 @@ struct Status {
     bool has_voluntary_context_switches_;
     uint64_t involuntary_context_switches_;
     bool has_involuntary_context_switches_;
+    std::string tags_;
+    bool has_tags_;
 
     EdgeFinished() {
       has_id_ = false;
@@ -316,6 +318,7 @@ struct Status {
       voluntary_context_switches_ = static_cast< uint64_t >(0);
       has_involuntary_context_switches_ = false;
       involuntary_context_switches_ = static_cast< uint64_t >(0);
+      has_tags_ = false;
     }
 
     EdgeFinished(const EdgeFinished&);
@@ -335,6 +338,7 @@ struct Status {
       WriteVarint64(output__, 11, io_output_kb_);
       WriteVarint64(output__, 12, voluntary_context_switches_);
       WriteVarint64(output__, 13, involuntary_context_switches_);
+      WriteString(output__, 14, tags_);
     }
 
     size_t ByteSizeLong() const {
@@ -352,6 +356,7 @@ struct Status {
       size += VarintSize64(io_output_kb_) + 1;
       size += VarintSize64(voluntary_context_switches_) + 1;
       size += VarintSize64(involuntary_context_switches_) + 1;
+      size += StringSize(tags_) + 1;
       return size;
     }
 
@@ -369,6 +374,7 @@ struct Status {
       io_output_kb_ = static_cast< uint64_t >(0);
       voluntary_context_switches_ = static_cast< uint64_t >(0);
       involuntary_context_switches_ = static_cast< uint64_t >(0);
+      tags_.clear();
     }
 
     uint32_t* mutable_id() {
@@ -474,6 +480,14 @@ struct Status {
     void set_involuntary_context_switches(const uint64_t& value) {
       has_involuntary_context_switches_ = true;
       involuntary_context_switches_ = value;
+    }
+    std::string* mutable_tags() {
+      has_tags_ = true;
+      return &tags_;
+    }
+    void set_tags(const std::string& value) {
+      has_tags_ = true;
+      tags_ = value;
     }
   };
 

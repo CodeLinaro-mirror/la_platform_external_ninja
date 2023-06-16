@@ -377,6 +377,7 @@ void StatusSerializer::BuildEdgeFinished(Edge* edge, int64_t end_time_millis,
   edge_finished->set_io_output_kb(result->rusage.ru_oublock / 2);
   edge_finished->set_voluntary_context_switches(result->rusage.ru_nvcsw);
   edge_finished->set_involuntary_context_switches(result->rusage.ru_nivcsw);
+  edge_finished->set_tags(edge->tags_);
 
   Send();
 }

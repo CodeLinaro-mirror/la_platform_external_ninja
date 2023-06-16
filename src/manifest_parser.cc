@@ -414,6 +414,7 @@ static inline bool AddPathToEdge(State* state, const Edge& edge,
 static const HashedStrView kPool { "pool" };
 static const HashedStrView kDeps { "deps" };
 static const HashedStrView kDyndep { "dyndep" };
+static const HashedStrView kTags { "tags" };
 
 struct ManifestLoader {
 private:
@@ -466,6 +467,14 @@ bool ManifestLoader::AddEdgeToGraph(Edge* edge, const LoadedFile& file,
       return DecorateError(file, edge->parse_state_.final_diag_pos,
                            "unknown pool name '" + pool_name + "'", err);
     }
+  }
+
+  std::string tags;
+  if (!edge->EvaluateVariable(&tags, kTags, edge->pos_.scope(), err, EdgeEval::kParseTime)) {
+    return false;
+  }
+  if (!tags.empty()) {
+    edge->tags_ = tags;
   }
 
   edge->outputs_.reserve(edge->explicit_outs_ + edge->implicit_outs_);

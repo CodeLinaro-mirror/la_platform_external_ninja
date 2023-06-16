@@ -493,7 +493,7 @@ n.newline()
 n.comment('the proto descriptor is generated using protoc.')
 def has_protoc():
     try:
-        proc = subprocess.Popen(['protoc', '--version'], stdout=subprocess.PIPE)
+        proc = subprocess.Popen(['protoc', '--version'], stdout=subprocess.PIPE, text=True)
         return proc.communicate()[0].startswith("libprotoc")
     except OSError:
         return False
@@ -501,7 +501,7 @@ def has_protoc():
 def can_generate_proto_header():
     try:
         tool = os.path.join(sourcedir, 'misc', 'generate_proto_header.py')
-        proc = subprocess.Popen([tool, '--probe'], stdout=subprocess.PIPE)
+        proc = subprocess.Popen([tool, '--probe'], stdout=subprocess.PIPE, text=True)
         return proc.communicate()[0].startswith("ok")
     except OSError:
         return False

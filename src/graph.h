@@ -470,6 +470,7 @@ public:
   bool deps_missing_ = false;
   bool phony_from_depfile_ = false;
   DepScanInfo dep_scan_info_;
+  std::string tags_;
 
   DeclIndex dfs_location() const { return pos_.dfs_location(); }
   const Rule& rule() const { return *rule_; }
