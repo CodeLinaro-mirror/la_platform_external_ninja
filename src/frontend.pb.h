@@ -54,12 +54,20 @@ struct Status {
     bool has_parallelism_;
     bool verbose_;
     bool has_verbose_;
+    uint32_t critical_path_time_;
+    bool has_critical_path_time_;
+    uint32_t estimated_total_time_;
+    bool has_estimated_total_time_;
 
     BuildStarted() {
       has_parallelism_ = false;
       parallelism_ = static_cast< uint32_t >(0);
       has_verbose_ = false;
       verbose_ = static_cast< bool >(0);
+      has_critical_path_time_ = false;
+      critical_path_time_ = static_cast< uint32_t >(0);
+      has_estimated_total_time_ = false;
+      estimated_total_time_ = static_cast< uint32_t >(0);
     }
 
     BuildStarted(const BuildStarted&);
@@ -68,18 +76,24 @@ struct Status {
     void SerializeToOstream(std::ostream* output__) const {
       WriteVarint32(output__, 1, parallelism_);
       WriteVarint32(output__, 2, verbose_);
+      WriteVarint32(output__, 3, critical_path_time_);
+      WriteVarint32(output__, 4, estimated_total_time_);
     }
 
     size_t ByteSizeLong() const {
       size_t size = 0;
       size += VarintSize32(parallelism_) + 1;
       size += VarintSizeBool(verbose_) + 1;
+      size += VarintSize32(critical_path_time_) + 1;
+      size += VarintSize32(estimated_total_time_) + 1;
       return size;
     }
 
     void Clear() {
       parallelism_ = static_cast< uint32_t >(0);
       verbose_ = static_cast< bool >(0);
+      critical_path_time_ = static_cast< uint32_t >(0);
+      estimated_total_time_ = static_cast< uint32_t >(0);
     }
 
     uint32_t* mutable_parallelism() {
@@ -97,6 +111,22 @@ struct Status {
     void set_verbose(const bool& value) {
       has_verbose_ = true;
       verbose_ = value;
+    }
+    uint32_t* mutable_critical_path_time() {
+      has_critical_path_time_ = true;
+      return &critical_path_time_;
+    }
+    void set_critical_path_time(const uint32_t& value) {
+      has_critical_path_time_ = true;
+      critical_path_time_ = value;
+    }
+    uint32_t* mutable_estimated_total_time() {
+      has_estimated_total_time_ = true;
+      return &estimated_total_time_;
+    }
+    void set_estimated_total_time(const uint32_t& value) {
+      has_estimated_total_time_ = true;
+      estimated_total_time_ = value;
     }
   };
 

@@ -299,6 +299,7 @@ struct Builder {
 
   /// Time the build started.
   int64_t start_time_millis_;
+  int64_t critical_time_millis_;
 
   DiskInterface* disk_interface_;
   DependencyScan scan_;

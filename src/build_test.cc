@@ -496,6 +496,8 @@ struct FakeStatus : public Status {
   virtual void Debug(const char* msg, ...) {}
   virtual void Info(const char* msg, ...) {}
   virtual void Error(const char* msg, ...) {}
+  virtual void AddEstimatedTime(int64_t estimated_time_millis) {}
+  virtual void SetCriticalPathTime(int64_t critical_path_time_millis) {}
 
   virtual void BuildEdgeFinished(Edge* edge, int64_t end_time_millis,
                                  const CommandRunner::Result* result) {

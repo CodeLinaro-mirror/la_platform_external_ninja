@@ -40,7 +40,8 @@ struct Status {
   virtual void Info(const char* msg, ...) = 0;
   virtual void Warning(const char* msg, ...) = 0;
   virtual void Error(const char* msg, ...) = 0;
-
+  virtual void AddEstimatedTime(int64_t estimated_time_millis) = 0;
+  virtual void SetCriticalPathTime(int64_t critical_path_time_millis) = 0;
   virtual ~Status() { }
 };
 
@@ -56,6 +57,8 @@ struct StatusPrinter : Status {
   virtual void BuildStarted();
   virtual void BuildFinished();
 
+  virtual void AddEstimatedTime(int64_t estimated_time_millis) { /* Not supported */ }
+  virtual void SetCriticalPathTime(int64_t critical_path_time_millis) { /* Not supported */ }
   virtual void Debug(const char* msg, ...);
   virtual void Info(const char* msg, ...);
   virtual void Warning(const char* msg, ...);
@@ -144,6 +147,9 @@ struct StatusSerializer : Status {
   virtual void Warning(const char* msg, ...);
   virtual void Error(const char* msg, ...);
 
+  virtual void AddEstimatedTime(int64_t estimated_time_millis);
+  virtual void SetCriticalPathTime(int64_t critical_path_time_millis);
+
   const BuildConfig& config_;
 
   FILE* f_;
@@ -159,6 +165,8 @@ struct StatusSerializer : Status {
 private:
   void Message(ninja::Status::Message::Level level, const char* msg, va_list ap);
   void Send();
+
+  int64_t estimated_total_time_millis_, critical_path_time_millis_, estimated_edges_;
 };
 
 #endif // !_WIN32

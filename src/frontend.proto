@@ -29,6 +29,8 @@ message Status {
     optional uint32 parallelism = 1;
     // Verbose value passed to ninja.
     optional bool verbose = 2;
+    optional uint32 critical_path_time = 3;
+    optional uint32 estimated_total_time = 4;
   }
 
   message BuildFinished {
