@@ -465,6 +465,7 @@ public:
   bool precomputed_dirtiness_ = false;
   size_t id_ = 0;
   int64_t priority_ = 0;
+  int64_t estimated_time_ = -1;
   bool outputs_ready_ = false;
   bool deps_loaded_ = false;
   bool deps_missing_ = false;
@@ -481,6 +482,7 @@ public:
   // After that, it is also updated from dependents.
   // The final priority would be the sum of the critical path between this edge and the target edge.
   int64_t priority() const { return priority_; }
+  int64_t estimated_time() const { return estimated_time_; }
   bool outputs_ready() const { return outputs_ready_; }
 
   // There are three types of inputs.

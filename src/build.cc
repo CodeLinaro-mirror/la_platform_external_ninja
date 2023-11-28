@@ -656,9 +656,15 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
       return data_source.Get(edge->outputs_[0]->globalPath().h).value_or(1);
     } else if (config_.ninja_log_as_weight_list) {
       if (scan_.build_log()) {
-        auto* entry = scan_.build_log()->LookupByOutput(edge->outputs_[0]->globalPath());
-        if (entry) {
-          return entry->end_time - entry->start_time + 1;
+        if (edge->estimated_time() == -1) {
+          auto* entry = scan_.build_log()->LookupByOutput(edge->outputs_[0]->globalPath());
+          if (entry) {
+            edge->estimated_time_ = entry->end_time - entry->start_time + 1;
+            status_->AddEstimatedTime(edge->estimated_time());
+            return edge->estimated_time();
+          }
+        } else {
+          return edge->estimated_time();
         }
       }
       return 1;
@@ -675,13 +681,13 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
       auto acc = p.second;
 
       if (!e) {
-        return std::unordered_map<Edge*, int64_t>();
+        return std::make_pair((int64_t)0, std::unordered_map<Edge*, int64_t>());
       }
       auto run = weight_getter(e);
       auto new_priority = run + acc;
       // Skip if priority isn't updated
       if (new_priority <= e->priority()) {
-        return std::unordered_map<Edge*, int64_t>();
+        return std::make_pair(e->priority(), std::unordered_map<Edge*, int64_t>());
       }
       e->priority_ = new_priority;
 
@@ -704,12 +710,15 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
           next_todo_map.try_emplace(ne, e->priority());
         }
       }
-      return next_todo_map;
+      return std::make_pair(e->priority(), next_todo_map);
     });
     todos.clear();
 
     std::unordered_map<Edge*, int64_t> next_todo_map_total;
-    for (const auto& todo_map : result) {
+    for (const auto& [priority, todo_map] : result) {
+      if (config_.ninja_log_as_weight_list) {
+        critical_time_millis_ = std::max(critical_time_millis_, priority);
+      }
       for (const auto& [k, v] : todo_map) {
         auto [it, inserted] = next_todo_map_total.try_emplace(k, v);
           if (!inserted) {
@@ -721,6 +730,7 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
       todos.emplace_back(key, value);
     }
   }
+  status_->SetCriticalPathTime(critical_time_millis_);
 }
 
 bool Builder::AddTargets(const std::vector<Node*> &nodes, string* err) {

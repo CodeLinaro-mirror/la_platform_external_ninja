@@ -107,6 +107,7 @@ cc_test_host {
     defaults: ["ninja_defaults"],
     static_libs: ["libninja"],
     gtest: false,
+    cpp_std: "gnu++17",
     srcs: [
         "src/build_log_test.cc",
         "src/build_test.cc",

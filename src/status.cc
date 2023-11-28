@@ -136,6 +136,15 @@ void StatusPrinter::BuildFinished() {
   printer_.PrintOnNewLine("");
 }
 
+void StatusSerializer::AddEstimatedTime(int64_t estimated_time_millis) {
+  estimated_total_time_millis_ += estimated_time_millis;
+  estimated_edges_++;
+}
+
+void StatusSerializer::SetCriticalPathTime(int64_t critical_path_time_millis) {
+  critical_path_time_millis_ = critical_path_time_millis;
+}
+
 string StatusPrinter::FormatProgressStatus(const char* progress_status_format,
                                            int64_t time_millis) const {
   string out;
@@ -388,6 +397,11 @@ void StatusSerializer::BuildStarted() {
   ninja::Status::BuildStarted* build_started = proto_.mutable_build_started();
 
   build_started->set_parallelism(config_.parallelism);
+  // It's meaningful only if more than half of total_edges are estimated.
+  if (estimated_edges_ > total_edges_ * 0.5) {
+    build_started->set_critical_path_time(critical_path_time_millis_);
+    build_started->set_estimated_total_time(estimated_total_time_millis_ * total_edges_ / estimated_edges_);
+  }
   build_started->set_verbose((config_.verbosity == BuildConfig::VERBOSE));
 
   Send();
