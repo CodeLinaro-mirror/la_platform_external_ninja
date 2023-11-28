@@ -681,7 +681,7 @@ void Builder::RefreshPriority(const std::vector<Node*>& start_nodes) {
       auto acc = p.second;
 
       if (!e) {
-        return std::make_pair(0L, std::unordered_map<Edge*, int64_t>());
+        return std::make_pair((int64_t)0, std::unordered_map<Edge*, int64_t>());
       }
       auto run = weight_getter(e);
       auto new_priority = run + acc;
