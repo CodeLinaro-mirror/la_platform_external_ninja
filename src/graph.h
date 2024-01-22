@@ -426,8 +426,6 @@ public:
   /// Like GetBinding("rspfile"), but without shell escaping.
   string GetUnescapedRspfile();
 
-  string GetSymlinkOutputs();
-
   void Dump(const char* prefix="") const;
 
   /// Temporary fields used only during manifest parsing.

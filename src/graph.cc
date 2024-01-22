@@ -620,7 +620,6 @@ static const HashedStrView kDepfile         { "depfile" };
 static const HashedStrView kDyndep          { "dyndep" };
 static const HashedStrView kRspfile         { "rspfile" };
 static const HashedStrView kRspFileContent  { "rspfile_content" };
-static const HashedStrView kSymlinkOutputs  { "symlink_outputs" };
 
 bool Edge::EvaluateCommand(std::string* out_append, bool incl_rsp_file,
                            std::string* err) {
@@ -736,10 +735,6 @@ std::string Edge::GetBindingImpl(const HashedStrView& key,
 
 std::string Edge::GetBinding(const HashedStrView& key) {
   return GetBindingImpl(key, EdgeEval::kFinalScope, EdgeEval::kShellEscape);
-}
-
-std::string Edge::GetSymlinkOutputs() {
-  return GetBindingImpl(kSymlinkOutputs, EdgeEval::kFinalScope, EdgeEval::kDoNotEscape);
 }
 
 std::string Edge::GetUnescapedDepfile() {

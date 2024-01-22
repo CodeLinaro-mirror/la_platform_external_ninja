@@ -1221,11 +1221,7 @@ bool WarningEnable(const string& name, Options* options, BuildConfig* config) {
 " requires -o usesphonyoutputs=yes\n"
 "  outputdir={err,warn}  how to treat outputs that are directories\n"
 "  missingoutfile={err,warn}  how to treat missing output files\n"
-"  oldoutput={err,warn}  how to treat output files older than their inputs\n"
-"\n"
-" requires -o usessymlinkoutputs=yes\n"
-"  undeclaredsymlinkoutputs={err,warn}  build statements creating symlink outputs must "
-"declare them in symlink_outputs\n");
+"  oldoutput={err,warn}  how to treat output files older than their inputs\n");
     return false;
   } else if (name == "dupbuild=err") {
     options->dupe_edges_should_err = true;
@@ -1269,12 +1265,6 @@ bool WarningEnable(const string& name, Options* options, BuildConfig* config) {
   } else if (name == "oldoutput=warn") {
     config->old_output_should_err = false;
     return true;
-  } else if (name == "undeclaredsymlinkoutputs=err") {
-    config->undeclared_symlink_outputs_should_err = true;
-    return true;
-  } else if (name == "undeclaredsymlinkoutputs=warn") {
-    config->undeclared_symlink_outputs_should_err = false;
-    return true;
   } else {
     const char* suggestion =
         SpellcheckString(name.c_str(), "dupbuild=err", "dupbuild=warn",
@@ -1282,8 +1272,7 @@ bool WarningEnable(const string& name, Options* options, BuildConfig* config) {
                          "missingdepfile=err", "missingdepfile=warn",
                          "outputdir=err", "outputdir=warn",
                          "missingoutfile=err", "missingoutfile=warn",
-                         "oldoutput=err", "oldoutput=warn",
-                         "undeclaredsymlinkoutputs=err", "undeclaredsymlinkoutputs=warn", NULL);
+                         "oldoutput=err", "oldoutput=warn", NULL);
     if (suggestion) {
       Error("unknown warning flag '%s', did you mean '%s'?",
             name.c_str(), suggestion);
@@ -1304,9 +1293,6 @@ bool OptionEnable(const string& name, Options* options, BuildConfig* config) {
 "                                outputdir\n"
 "                                missingoutfile\n"
 "                                oldoutput\n"
-"  usessymlinkoutputs={yes,no}  whether the generate uses 'symlink_outputs' so \n"
-"                             that these warnings work:\n"
-"                                undeclaredsymlinkoutputs\n"
 "  preremoveoutputs={yes,no}  whether to remove outputs before running rule\n"
 "  usesninjalogasweightlist={yes,no}  whether to use ninja log as source of weight list\n"
 "  usesweightlist={<file path>,no}  whether to prioritize some rules based on weight list from file\n");
@@ -1316,12 +1302,6 @@ bool OptionEnable(const string& name, Options* options, BuildConfig* config) {
     return true;
   } else if (name == "usesphonyoutputs=no") {
     config->uses_phony_outputs = false;
-    return true;
-  } else if (name == "usessymlinkoutputs=yes") {
-    config->uses_symlink_outputs = true;
-    return true;
-  } else if (name == "usessymlinkoutputs=no") {
-    config->uses_symlink_outputs = false;
     return true;
   } else if (name == "preremoveoutputs=yes") {
     config->pre_remove_output_files = true;
