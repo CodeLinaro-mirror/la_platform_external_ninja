@@ -478,6 +478,7 @@ bool DependencyScan::RecomputeOutputDirty(Edge* edge,
         (entry = build_log()->LookupByOutput(output->globalPath()))) {
       output_mtime = entry->mtime;
       used_restat = true;
+      output->set_restat_mtime(output_mtime);
     }
 
     if (output_mtime < most_recent_input->mtime()) {
