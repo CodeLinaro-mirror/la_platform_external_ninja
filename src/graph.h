@@ -237,6 +237,8 @@ struct Node {
   // Used in the inputs debug tool.
   bool InputsChecked() const { return inputs_checked_; }
   void MarkInputsChecked() { inputs_checked_ = true; }
+  TimeStamp restat_mtime() { return restat_mtime_; }
+  void set_restat_mtime(TimeStamp mtime) { restat_mtime_ = mtime; }
 
 private:
   HashedStr path_;
@@ -249,6 +251,9 @@ private:
 
   /// If this value is >= 0, it represents a precomputed mtime for the node.
   TimeStamp precomputed_mtime_ = -1;
+
+  // For restat rule this is the mtime read from build_log.
+  TimeStamp restat_mtime_ = -1;
 
   /// Dirty is true when the underlying file is out-of-date.
   /// But note that Edge::outputs_ready_ is also used in judging which

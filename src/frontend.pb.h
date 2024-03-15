@@ -165,6 +165,8 @@ struct Status {
     bool has_command_;
     bool console_;
     bool has_console_;
+    std::vector< std::string > changed_inputs_;
+    bool has_changed_inputs_;
 
     EdgeStarted() {
       has_id_ = false;
@@ -177,6 +179,7 @@ struct Status {
       has_command_ = false;
       has_console_ = false;
       console_ = static_cast< bool >(0);
+      has_changed_inputs_ = false;
     }
 
     EdgeStarted(const EdgeStarted&);
@@ -196,6 +199,10 @@ struct Status {
       WriteString(output__, 5, desc_);
       WriteString(output__, 6, command_);
       WriteVarint32(output__, 7, console_);
+      for (std::vector< std::string >::const_iterator it_ = changed_inputs_.begin();
+          it_ != changed_inputs_.end(); it_++) {
+        WriteString(output__, 8, *it_);
+      }
     }
 
     size_t ByteSizeLong() const {
@@ -213,6 +220,10 @@ struct Status {
       size += StringSize(desc_) + 1;
       size += StringSize(command_) + 1;
       size += VarintSizeBool(console_) + 1;
+      for (std::vector< std::string >::const_iterator it_ = changed_inputs_.begin();
+          it_ != changed_inputs_.end(); it_++) {
+        size += StringSize(*it_) + 1;
+      }
       return size;
     }
 
@@ -224,6 +235,7 @@ struct Status {
       desc_.clear();
       command_.clear();
       console_ = static_cast< bool >(0);
+      changed_inputs_.clear();
     }
 
     uint32_t* mutable_id() {
@@ -289,6 +301,18 @@ struct Status {
     void set_console(const bool& value) {
       has_console_ = true;
       console_ = value;
+    }
+    std::vector< std::string >* mutable_changed_inputs() {
+      has_changed_inputs_ = true;
+      return &changed_inputs_;
+    }
+    void add_changed_inputs(const std::string& value) {
+      has_changed_inputs_ = true;
+      changed_inputs_.push_back(value);
+    }
+    void set_changed_inputs(const std::vector< std::string >& value) {
+      has_changed_inputs_ = true;
+      changed_inputs_ = value;
     }
   };
 

@@ -342,16 +342,29 @@ void StatusSerializer::BuildEdgeStarted(Edge* edge, int64_t start_time_millis) {
   edge_started->set_id(edge->id_);
   edge_started->set_start_time(start_time_millis);
 
+  int64_t earliest_output_time = INT64_MAX;
+  edge_started->mutable_outputs()->reserve(edge->outputs_.size());
+
+  for (vector<Node*>::iterator it = edge->outputs_.begin();
+       it != edge->outputs_.end(); ++it) {
+    edge_started->add_outputs((*it)->globalPath().h.data());
+    TimeStamp output_mtime = (*it)->mtime();
+    if ((*it)->restat_mtime() != -1) {
+      output_mtime = (*it)->restat_mtime();
+    }
+
+    if (output_mtime > 0 && output_mtime < earliest_output_time) {
+      earliest_output_time = output_mtime;
+    }
+  }
+
   edge_started->mutable_inputs()->reserve(edge->inputs_.size());
   for (vector<Node*>::iterator it = edge->inputs_.begin();
        it != edge->inputs_.end(); ++it) {
     edge_started->add_inputs((*it)->globalPath().h.data());
-  }
-
-  edge_started->mutable_outputs()->reserve(edge->inputs_.size());
-  for (vector<Node*>::iterator it = edge->outputs_.begin();
-       it != edge->outputs_.end(); ++it) {
-    edge_started->add_outputs((*it)->globalPath().h.data());
+    if (((*it)->mtime() > earliest_output_time) && (!((*it)->in_edge()) || (*it)->in_edge()->inputs_.empty())) {
+      edge_started->add_changed_inputs((*it)->globalPath().h.data());
+    }
   }
 
   const auto& proirity_suffix = config_.weight_list_path ? (" (priority: " + std::to_string(edge->priority()) + ")") : "";
