@@ -131,16 +131,41 @@ cc_test_host {
 }
 
 cc_test_host {
-    name: "ninja_tests",
+    name: "ninja_build_log_perftest",
     gtest: false,
     defaults: ["ninja_defaults"],
-    test_per_src: true,
     static_libs: ["libninja"],
-    srcs: [
-        "src/build_log_perftest.cc",
-        "src/canon_perftest.cc",
-        "src/depfile_parser_perftest.cc",
-        "src/hash_collision_bench.cc",
-        "src/manifest_parser_perftest.cc",
-    ],
+    srcs: ["src/build_log_perftest.cc"],
+}
+
+cc_test_host {
+    name: "ninja_canon_perftest",
+    gtest: false,
+    defaults: ["ninja_defaults"],
+    static_libs: ["libninja"],
+    srcs: ["src/canon_perftest.cc"],
+}
+
+cc_test_host {
+    name: "ninja_depfile_parser_perftest",
+    gtest: false,
+    defaults: ["ninja_defaults"],
+    static_libs: ["libninja"],
+    srcs: ["src/depfile_parser_perftest.cc"],
+}
+
+cc_test_host {
+    name: "ninja_hash_collision_bench",
+    gtest: false,
+    defaults: ["ninja_defaults"],
+    static_libs: ["libninja"],
+    srcs: ["src/hash_collision_bench.cc"],
+}
+
+cc_test_host {
+    name: "ninja_manifest_parser_perftest",
+    gtest: false,
+    defaults: ["ninja_defaults"],
+    static_libs: ["libninja"],
+    srcs: ["src/manifest_parser_perftest.cc"],
 }
