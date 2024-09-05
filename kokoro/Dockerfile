@@ -1,8 +1,9 @@
-FROM centos:7
+FROM rockylinux:8
 
 RUN yum -y update && \
   yum -y install \
     gcc-c++ \
     git \
-    libstdc++-static \
     python3
+
+RUN dnf --enablerepo=powertools install -y libstdc++-static
