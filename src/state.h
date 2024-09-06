@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "eval_env.h"
+#include "graph.h"
 #include "hash_map.h"
 #include "util.h"
 
@@ -38,7 +39,7 @@ struct Rule;
 /// completes).
 struct Pool {
   Pool(const std::string& name, int depth)
-    : name_(name), current_use_(0), depth_(depth), delayed_(&WeightedEdgeCmp) {}
+    : name_(name), current_use_(0), depth_(depth), delayed_() {}
 
   // A depth of 0 is infinite
   bool is_valid() const { return depth_ >= 0; }
@@ -61,7 +62,7 @@ struct Pool {
   void DelayEdge(Edge* edge);
 
   /// Pool will add zero or more edges to the ready_queue
-  void RetrieveReadyEdges(std::set<Edge*>* ready_queue);
+  void RetrieveReadyEdges(EdgePriorityQueue* ready_queue);
 
   /// Dump the Pool and its edges (useful for debugging).
   void Dump() const;
@@ -74,9 +75,19 @@ struct Pool {
   int current_use_;
   int depth_;
 
-  static bool WeightedEdgeCmp(const Edge* a, const Edge* b);
+  struct WeightedEdgeCmp {
+    bool operator()(const Edge* a, const Edge* b) const {
+      if (!a) return b;
+      if (!b) return false;
+      int weight_diff = a->weight() - b->weight();
+      if (weight_diff != 0) {
+        return weight_diff < 0;
+      }
+      return EdgePriorityGreater()(a, b);
+    }
+  };
 
-  typedef std::set<Edge*,bool(*)(const Edge*, const Edge*)> DelayedEdges;
+  typedef std::set<Edge*, WeightedEdgeCmp> DelayedEdges;
   DelayedEdges delayed_;
 };
 
@@ -97,8 +108,12 @@ struct State {
   Node* LookupNode(StringPiece path) const;
   Node* SpellcheckNode(const std::string& path);
 
+  /// Add input / output / validation nodes to a given edge. This also
+  /// ensures that the generated_by_dep_loader() flag for all these nodes
+  /// is set to false, to indicate that they come from the input manifest.
   void AddIn(Edge* edge, StringPiece path, uint64_t slash_bits);
-  bool AddOut(Edge* edge, StringPiece path, uint64_t slash_bits);
+  bool AddOut(Edge* edge, StringPiece path, uint64_t slash_bits, std::string* err);
+  void AddValidation(Edge* edge, StringPiece path, uint64_t slash_bits);
   bool AddDefault(StringPiece path, std::string* error);
 
   /// Reset state.  Keeps all nodes and edges, but restores them to the

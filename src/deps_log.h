@@ -86,6 +86,7 @@ struct DepsLog {
   };
   LoadStatus Load(const std::string& path, State* state, std::string* err);
   Deps* GetDeps(Node* node);
+  Node* GetFirstReverseDepsNode(Node* node);
 
   /// Rewrite the known log entries, throwing away old data.
   bool Recompact(const std::string& path, std::string* err);
@@ -96,7 +97,7 @@ struct DepsLog {
   /// past but are no longer part of the manifest.  This function returns if
   /// this is the case for a given node.  This function is slow, don't call
   /// it from code that runs on every build.
-  bool IsDepsEntryLiveFor(Node* node);
+  static bool IsDepsEntryLiveFor(const Node* node);
 
   /// Used for tests.
   const std::vector<Node*>& nodes() const { return nodes_; }

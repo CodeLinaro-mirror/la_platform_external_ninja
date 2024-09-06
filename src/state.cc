@@ -19,7 +19,6 @@
 
 #include "edit_distance.h"
 #include "graph.h"
-#include "metrics.h"
 #include "util.h"
 
 using namespace std;
@@ -39,13 +38,13 @@ void Pool::DelayEdge(Edge* edge) {
   delayed_.insert(edge);
 }
 
-void Pool::RetrieveReadyEdges(set<Edge*>* ready_queue) {
+void Pool::RetrieveReadyEdges(EdgePriorityQueue* ready_queue) {
   DelayedEdges::iterator it = delayed_.begin();
   while (it != delayed_.end()) {
     Edge* edge = *it;
     if (current_use_ + edge->weight() > depth_)
       break;
-    ready_queue->insert(edge);
+    ready_queue->push(edge);
     EdgeScheduled(*edge);
     ++it;
   }
@@ -60,14 +59,6 @@ void Pool::Dump() const {
     printf("\t");
     (*it)->Dump();
   }
-}
-
-// static
-bool Pool::WeightedEdgeCmp(const Edge* a, const Edge* b) {
-  if (!a) return b;
-  if (!b) return false;
-  int weight_diff = a->weight() - b->weight();
-  return ((weight_diff < 0) || (weight_diff == 0 && a < b));
 }
 
 Pool State::kDefaultPool("", 0);
@@ -97,6 +88,7 @@ Edge* State::AddEdge(const Rule* rule) {
   edge->rule_ = rule;
   edge->pool_ = &State::kDefaultPool;
   edge->env_ = &bindings_;
+  edge->id_ = edges_.size();
   edges_.push_back(edge);
   return edge;
 }
@@ -111,7 +103,6 @@ Node* State::GetNode(StringPiece path, uint64_t slash_bits) {
 }
 
 Node* State::LookupNode(StringPiece path) const {
-  METRIC_RECORD("lookup node");
   Paths::const_iterator i = paths_.find(path);
   if (i != paths_.end())
     return i->second;
@@ -137,17 +128,33 @@ Node* State::SpellcheckNode(const string& path) {
 
 void State::AddIn(Edge* edge, StringPiece path, uint64_t slash_bits) {
   Node* node = GetNode(path, slash_bits);
+  node->set_generated_by_dep_loader(false);
   edge->inputs_.push_back(node);
   node->AddOutEdge(edge);
 }
 
-bool State::AddOut(Edge* edge, StringPiece path, uint64_t slash_bits) {
+bool State::AddOut(Edge* edge, StringPiece path, uint64_t slash_bits,
+                   std::string* err) {
   Node* node = GetNode(path, slash_bits);
-  if (node->in_edge())
+  if (Edge* other = node->in_edge()) {
+    if (other == edge) {
+      *err = path.AsString() + " is defined as an output multiple times";
+    } else {
+      *err = "multiple rules generate " + path.AsString();
+    }
     return false;
+  }
   edge->outputs_.push_back(node);
   node->set_in_edge(edge);
+  node->set_generated_by_dep_loader(false);
   return true;
+}
+
+void State::AddValidation(Edge* edge, StringPiece path, uint64_t slash_bits) {
+  Node* node = GetNode(path, slash_bits);
+  edge->validations_.push_back(node);
+  node->AddValidationOutEdge(edge);
+  node->set_generated_by_dep_loader(false);
 }
 
 bool State::AddDefault(StringPiece path, string* err) {
