@@ -1,6 +1,6 @@
 The Ninja build system
 ======================
-v1.10.2, Nov 2020
+v1.12.1, May 2024
 
 
 Introduction
@@ -25,7 +25,7 @@ Where other build systems are high-level languages, Ninja aims to be
 an assembler.
 
 Build systems get slow when they need to make decisions.  When you are
-in a edit-compile cycle you want it to be as fast as possible -- you
+in an edit-compile cycle you want it to be as fast as possible -- you
 want the build system to do the minimum work necessary to figure out
 what needs to be built immediately.
 
@@ -198,14 +198,18 @@ Several placeholders are available:
 
 `%s`:: The number of started edges.
 `%t`:: The total number of edges that must be run to complete the build.
-`%p`:: The percentage of started edges.
+`%p`:: The percentage of finished edges.
 `%r`:: The number of currently running edges.
 `%u`:: The number of remaining edges to start.
 `%f`:: The number of finished edges.
 `%o`:: Overall rate of finished edges per second
 `%c`:: Current rate of finished edges per second (average over builds
 specified by `-j` or its default)
-`%e`:: Elapsed time in seconds.  _(Available since Ninja 1.2.)_
+`%e`:: Elapsed time in seconds. _(Available since Ninja 1.2.)_
+`%E`:: Remaining time (ETA) in seconds. _(Available since Ninja 1.12.)_
+`%w`:: Elapsed time in [h:]mm:ss format. _(Available since Ninja 1.12.)_
+`%W`:: Remaining time (ETA) in [h:]mm:ss format. _(Available since Ninja 1.12.)_
+`%P`:: The percentage (in ppp% format) of time elapsed out of predicted total runtime. _(Available since Ninja 1.12.)_
 `%%`:: A plain `%` character.
 
 The default progress status is `"[%f/%t] "` (note the trailing space
@@ -223,14 +227,14 @@ found useful during Ninja's development.  The current tools are:
 
 `browse`:: browse the dependency graph in a web browser.  Clicking a
 file focuses the view on that file, showing inputs and outputs.  This
-feature requires a Python installation. By default port 8000 is used
+feature requires a Python installation. By default, port 8000 is used
 and a web browser will be opened. This can be changed as follows:
 +
 ----
 ninja -t browse --port=8000 --no-browser mytarget
 ----
 +
-`graph`:: output a file in the syntax used by `graphviz`, a automatic
+`graph`:: output a file in the syntax used by `graphviz`, an automatic
 graph layout tool.  Use it like:
 +
 ----
@@ -258,7 +262,11 @@ than the _depth_ mode.
 executed in order, may be used to rebuild those targets, assuming that all
 output files are out of date.
 
-`clean`:: remove built files. By default it removes all built files
+`inputs`:: given a list of targets, print a list of all inputs used to
+rebuild those targets.
+_Available since Ninja 1.11._
+
+`clean`:: remove built files. By default, it removes all built files
 except for those created by the generator.  Adding the `-g` flag also
 removes built files created by the generator (see <<ref_rule,the rule
 reference for the +generator+ attribute>>).  Additional arguments are
@@ -285,14 +293,75 @@ _Available since Ninja 1.2._
 `deps`:: show all dependencies stored in the `.ninja_deps` file. When given a
 target, show just the target's dependencies. _Available since Ninja 1.4._
 
+`missingdeps`:: given a list of targets, look for targets that depend on
+a generated file, but do not have a properly (possibly transitive) dependency
+on the generator.  Such targets may cause build flakiness on clean builds.
++
+The broken targets can be found assuming deps log / depfile dependency
+information is correct.  Any target that depends on a generated file (output
+of a generator-target) implicitly, but does not have an explicit or order-only
+dependency path to the generator-target, is considered broken.
++
+The tool's findings can be verified by trying to build the listed targets in
+a clean outdir without building any other targets.  The build should fail for
+each of them with a missing include error or equivalent pointing to the
+generated file.
+_Available since Ninja 1.11._
+
 `recompact`:: recompact the `.ninja_deps` file. _Available since Ninja 1.4._
 
 `restat`:: updates all recorded file modification timestamps in the `.ninja_log`
 file. _Available since Ninja 1.10._
 
-`rules`:: output the list of all rules (eventually with their description
-if they have one).  It can be used to know which rule name to pass to
-+ninja -t targets rule _name_+ or +ninja -t compdb+.
+`rules`:: output the list of all rules. It can be used to know which rule name
+to pass to +ninja -t targets rule _name_+ or +ninja -t compdb+. Adding the `-d`
+flag also prints the description of the rules.
+
+`msvc`:: Available on Windows hosts only.
+Helper tool to invoke the `cl.exe` compiler with a pre-defined set of
+environment variables, as in:
++
+----
+ninja -t msvc -e ENVFILE -- cl.exe <arguments>
+----
++
+Where `ENVFILE` is a binary file that contains an environment block suitable
+for CreateProcessA() on Windows (i.e. a series of zero-terminated strings that
+look like NAME=VALUE, followed by an extra zero terminator). Note that this uses
+the local codepage encoding.
++
+This tool also supports a deprecated way of parsing the compiler's output when
+the `/showIncludes` flag is used, and generating a GCC-compatible depfile from it:
++
+----
+ninja -t msvc -o DEPFILE [-p STRING] -- cl.exe /showIncludes <arguments>
+----
++
+When using this option, `-p STRING` can be used to pass the localized line prefix
+that `cl.exe` uses to output dependency information. For English-speaking regions
+this is `"Note: including file: "` without the double quotes, but will be different
+for other regions.
++
+Note that Ninja supports this natively now, with the use of `deps = msvc` and
+`msvc_deps_prefix` in Ninja files. Native support also avoids launching an extra
+tool process each time the compiler must be called, which can speed up builds
+noticeably on Windows.
+
+`wincodepage`:: Available on Windows hosts (_since Ninja 1.11_).
+Prints the Windows code page whose encoding is expected in the build file.
+The output has the form:
++
+----
+Build file encoding: <codepage>
+----
++
+Additional lines may be added in future versions of Ninja.
++
+The `<codepage>` is one of:
+
+`UTF-8`::: Encode as UTF-8.
+
+`ANSI`::: Encode to the system-wide ANSI code page.
 
 Writing your own Ninja files
 ----------------------------
@@ -453,6 +522,11 @@ nothing, but phony rules are handled specially in that they aren't
 printed when run, logged (see below), nor do they contribute to the
 command count printed as part of the build process.
 
+When a `phony` target is used as an input to another build rule, the
+other build rule will, semantically, consider the inputs of the
+`phony` rule as its own. Therefore, `phony` rules can be used to group
+inputs, e.g. header files.
+
 `phony` can also be used to create dummy targets for files which
 may not exist at build time.  If a phony build statement is written
 without any dependencies, the target will be considered out of date if
@@ -604,14 +678,14 @@ Ninja supports this processing in two forms.
    as a temporary).
 
 2. `deps = msvc` specifies that the tool outputs header dependencies
-   in the form produced by Visual Studio's compiler's
+   in the form produced by the Visual Studio compiler's
    http://msdn.microsoft.com/en-us/library/hdkef6tk(v=vs.90).aspx[`/showIncludes`
    flag].  Briefly, this means the tool outputs specially-formatted lines
    to its stdout.  Ninja then filters these lines from the displayed
    output.  No `depfile` attribute is necessary, but the localized string
-   in front of the the header file path. For instance
+   in front of the header file path should be globally defined. For instance,
    `msvc_deps_prefix = Note: including file:`
-   for a English Visual Studio (the default). Should be globally defined.
+   for an English Visual Studio (the default).
 +
 ----
 msvc_deps_prefix = Note: including file:
@@ -713,6 +787,8 @@ A file is a series of declarations.  A declaration can be one of:
    Order-only dependencies may be tacked on the end with +||
    _dependency1_ _dependency2_+.  (See <<ref_dependencies,the reference on
    dependency types>>.)
+   Validations may be taked on the end with +|@ _validation1_ _validation2_+.
+   (See <<validations,the reference on validations>>.)
 +
 Implicit outputs _(available since Ninja 1.7)_ may be added before
 the `:` with +| _output1_ _output2_+ and do not appear in `$out`.
@@ -892,14 +968,14 @@ Fundamentally, command lines behave differently on Unixes and Windows.
 
 On Unixes, commands are arrays of arguments.  The Ninja `command`
 variable is passed directly to `sh -c`, which is then responsible for
-interpreting that string into an argv array.  Therefore the quoting
+interpreting that string into an argv array.  Therefore, the quoting
 rules are those of the shell, and you can use all the normal shell
 operators, like `&&` to chain multiple commands, or `VAR=value cmd` to
 set environment variables.
 
 On Windows, commands are strings, so Ninja passes the `command` string
 directly to `CreateProcess`.  (In the common case of simply executing
-a compiler this means there is less overhead.)  Consequently the
+a compiler this means there is less overhead.)  Consequently, the
 quoting rules are determined by the called program, which on Windows
 are usually provided by the C library.  If you need shell
 interpretation of the command (such as the use of `&&` to chain
@@ -950,8 +1026,9 @@ source file of a compile command.
 +
 This is for expressing dependencies that don't show up on the
 command line of the command; for example, for a rule that runs a
-script, the script itself should be an implicit dependency, as
-changes to the script should cause the output to rebuild.
+script that reads a hardcoded file, the hardcoded file should
+be an implicit dependency, as changes to the file should cause
+the output to rebuild, even though it doesn't show up in the arguments.
 +
 Note that dependencies as loaded through depfiles have slightly different
 semantics, as described in the <<ref_rule,rule reference>>.
@@ -969,6 +1046,34 @@ express the implicit dependency.)
 
 File paths are compared as is, which means that an absolute path and a
 relative path, pointing to the same file, are considered different by Ninja.
+
+[[validations]]
+Validations
+~~~~~~~~~~~
+
+_Available since Ninja 1.11._
+
+Validations listed on the build line cause the specified files to be
+added to the top level of the build graph (as if they were specified
+on the Ninja command line) whenever the build line is a transitive
+dependency of one of the targets specified on the command line or a
+default target.
+
+Validations are added to the build graph regardless of whether the output
+files of the build statement are dirty are not, and the dirty state of
+the build statement that outputs the file being used as a validation
+has no effect on the dirty state of the build statement that requested it.
+
+A build edge can list another build edge as a validation even if the second
+edge depends on the first.
+
+Validations are designed to handle rules that perform error checking but
+don't produce any artifacts needed by the build, for example, static
+analysis tools.  Marking the static analysis rule as an implicit input
+of the main build rule of the source files or of the rules that depend
+on the main build rule would slow down the critical path of the build,
+but using a validation would allow the build to proceed in parallel with
+the static analysis rule once the main build rule is complete.
 
 Variable expansion
 ~~~~~~~~~~~~~~~~~~

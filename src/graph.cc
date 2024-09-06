@@ -15,6 +15,7 @@
 #include "graph.h"
 
 #include <algorithm>
+#include <deque>
 #include <assert.h>
 #include <stdio.h>
 
@@ -31,16 +32,56 @@
 using namespace std;
 
 bool Node::Stat(DiskInterface* disk_interface, string* err) {
-  return (mtime_ = disk_interface->Stat(path_, err)) != -1;
+  mtime_ = disk_interface->Stat(path_, err);
+  if (mtime_ == -1) {
+    return false;
+  }
+  exists_ = (mtime_ != 0) ? ExistenceStatusExists : ExistenceStatusMissing;
+  return true;
 }
 
-bool DependencyScan::RecomputeDirty(Node* node, string* err) {
-  vector<Node*> stack;
-  return RecomputeDirty(node, &stack, err);
+void Node::UpdatePhonyMtime(TimeStamp mtime) {
+  if (!exists()) {
+    mtime_ = std::max(mtime_, mtime);
+  }
 }
 
-bool DependencyScan::RecomputeDirty(Node* node, vector<Node*>* stack,
+bool DependencyScan::RecomputeDirty(Node* initial_node,
+                                    std::vector<Node*>* validation_nodes,
                                     string* err) {
+  std::vector<Node*> stack;
+  std::vector<Node*> new_validation_nodes;
+
+  std::deque<Node*> nodes(1, initial_node);
+
+  // RecomputeNodeDirty might return new validation nodes that need to be
+  // checked for dirty state, keep a queue of nodes to visit.
+  while (!nodes.empty()) {
+    Node* node = nodes.front();
+    nodes.pop_front();
+
+    stack.clear();
+    new_validation_nodes.clear();
+
+    if (!RecomputeNodeDirty(node, &stack, &new_validation_nodes, err))
+      return false;
+    nodes.insert(nodes.end(), new_validation_nodes.begin(),
+                              new_validation_nodes.end());
+    if (!new_validation_nodes.empty()) {
+      assert(validation_nodes &&
+          "validations require RecomputeDirty to be called with validation_nodes");
+      validation_nodes->insert(validation_nodes->end(),
+                           new_validation_nodes.begin(),
+                           new_validation_nodes.end());
+    }
+  }
+
+  return true;
+}
+
+bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
+                                        std::vector<Node*>* validation_nodes,
+                                        string* err) {
   Edge* edge = node->in_edge();
   if (!edge) {
     // If we already visited this leaf node then we are done.
@@ -84,7 +125,7 @@ bool DependencyScan::RecomputeDirty(Node* node, vector<Node*>* stack,
     //   Later during the build the dyndep file will become ready and be
     //   loaded to update this edge before it can possibly be scheduled.
     if (edge->dyndep_ && edge->dyndep_->dyndep_pending()) {
-      if (!RecomputeDirty(edge->dyndep_, stack, err))
+      if (!RecomputeNodeDirty(edge->dyndep_, stack, validation_nodes, err))
         return false;
 
       if (!edge->dyndep_->in_edge() ||
@@ -115,12 +156,20 @@ bool DependencyScan::RecomputeDirty(Node* node, vector<Node*>* stack,
     }
   }
 
+  // Store any validation nodes from the edge for adding to the initial
+  // nodes.  Don't recurse into them, that would trigger the dependency
+  // cycle detector if the validation node depends on this node.
+  // RecomputeDirty will add the validation nodes to the initial nodes
+  // and recurse into them.
+  validation_nodes->insert(validation_nodes->end(),
+      edge->validations_.begin(), edge->validations_.end());
+
   // Visit all inputs; we're dirty if any of the inputs are dirty.
   Node* most_recent_input = NULL;
   for (vector<Node*>::iterator i = edge->inputs_.begin();
        i != edge->inputs_.end(); ++i) {
     // Visit this input.
-    if (!RecomputeDirty(*i, stack, err))
+    if (!RecomputeNodeDirty(*i, stack, validation_nodes, err))
       return false;
 
     // If an input is not ready, neither are our outputs.
@@ -237,10 +286,16 @@ bool DependencyScan::RecomputeOutputDirty(const Edge* edge,
               output->path().c_str());
       return true;
     }
+
+    // Update the mtime with the newest input. Dependents can thus call mtime()
+    // on the fake node and get the latest mtime of the dependencies
+    if (most_recent_input) {
+      output->UpdatePhonyMtime(most_recent_input->mtime());
+    }
+
+    // Phony edges are clean, nothing to do
     return false;
   }
-
-  BuildLog::LogEntry* entry = 0;
 
   // Dirty if we're missing the output.
   if (!output->exists()) {
@@ -248,29 +303,28 @@ bool DependencyScan::RecomputeOutputDirty(const Edge* edge,
     return true;
   }
 
+  BuildLog::LogEntry* entry = 0;
+
+  // If this is a restat rule, we may have cleaned the output in a
+  // previous run and stored the command start time in the build log.
+  // We don't want to consider a restat rule's outputs as dirty unless
+  // an input changed since the last run, so we'll skip checking the
+  // output file's actual mtime and simply check the recorded mtime from
+  // the log against the most recent input's mtime (see below)
+  bool used_restat = false;
+  if (edge->GetBindingBool("restat") && build_log() &&
+      (entry = build_log()->LookupByOutput(output->path()))) {
+    used_restat = true;
+  }
+
   // Dirty if the output is older than the input.
-  if (most_recent_input && output->mtime() < most_recent_input->mtime()) {
-    TimeStamp output_mtime = output->mtime();
-
-    // If this is a restat rule, we may have cleaned the output with a restat
-    // rule in a previous run and stored the most recent input mtime in the
-    // build log.  Use that mtime instead, so that the file will only be
-    // considered dirty if an input was modified since the previous run.
-    bool used_restat = false;
-    if (edge->GetBindingBool("restat") && build_log() &&
-        (entry = build_log()->LookupByOutput(output->path()))) {
-      output_mtime = entry->mtime;
-      used_restat = true;
-    }
-
-    if (output_mtime < most_recent_input->mtime()) {
-      EXPLAIN("%soutput %s older than most recent input %s "
-              "(%" PRId64 " vs %" PRId64 ")",
-              used_restat ? "restat of " : "", output->path().c_str(),
-              most_recent_input->path().c_str(),
-              output_mtime, most_recent_input->mtime());
-      return true;
-    }
+  if (!used_restat && most_recent_input && output->mtime() < most_recent_input->mtime()) {
+    EXPLAIN("output %s older than most recent input %s "
+            "(%" PRId64 " vs %" PRId64 ")",
+            output->path().c_str(),
+            most_recent_input->path().c_str(),
+            output->mtime(), most_recent_input->mtime());
+    return true;
   }
 
   if (build_log()) {
@@ -288,7 +342,9 @@ bool DependencyScan::RecomputeOutputDirty(const Edge* edge,
         // May also be dirty due to the mtime in the log being older than the
         // mtime of the most recent input.  This can occur even when the mtime
         // on disk is newer if a previous run wrote to the output file but
-        // exited with an error or was interrupted.
+        // exited with an error or was interrupted. If this was a restat rule,
+        // then we only check the recorded mtime against the most recent input
+        // mtime and ignore the actual output's mtime above.
         EXPLAIN("recorded mtime of %s older than most recent input %s (%" PRId64 " vs %" PRId64 ")",
                 output->path().c_str(), most_recent_input->path().c_str(),
                 entry->mtime, most_recent_input->mtime());
@@ -335,7 +391,7 @@ struct EdgeEnv : public Env {
   std::string MakePathList(const Node* const* span, size_t size, char sep) const;
 
  private:
-  vector<string> lookups_;
+  std::vector<std::string> lookups_;
   const Edge* const edge_;
   EscapeKind escape_in_out_;
   bool recursive_;
@@ -345,21 +401,50 @@ string EdgeEnv::LookupVariable(const string& var) {
   if (var == "in" || var == "in_newline") {
     int explicit_deps_count = edge_->inputs_.size() - edge_->implicit_deps_ -
       edge_->order_only_deps_;
-#if __cplusplus >= 201103L
     return MakePathList(edge_->inputs_.data(), explicit_deps_count,
-#else
-    return MakePathList(&edge_->inputs_[0], explicit_deps_count,
-#endif
                         var == "in" ? ' ' : '\n');
   } else if (var == "out") {
     int explicit_outs_count = edge_->outputs_.size() - edge_->implicit_outs_;
     return MakePathList(&edge_->outputs_[0], explicit_outs_count, ' ');
   }
 
+  // Technical note about the lookups_ vector.
+  //
+  // This is used to detect cycles during recursive variable expansion
+  // which can be seen as a graph traversal problem. Consider the following
+  // example:
+  //
+  //    rule something
+  //      command = $foo $foo $var1
+  //      var1 = $var2
+  //      var2 = $var3
+  //      var3 = $var1
+  //      foo = FOO
+  //
+  // Each variable definition can be seen as a node in a graph that looks
+  // like the following:
+  //
+  //   command --> foo
+  //      |
+  //      v
+  //    var1 <-----.
+  //      |        |
+  //      v        |
+  //    var2 ---> var3
+  //
+  // The lookups_ vector is used as a stack of visited nodes/variables
+  // during recursive expansion. Entering a node adds an item to the
+  // stack, leaving the node removes it.
+  //
+  // The recursive_ flag is used as a small performance optimization
+  // to never record the starting node in the stack when beginning a new
+  // expansion, since in most cases, expansions are not recursive
+  // at all.
+  //
   if (recursive_) {
-    vector<string>::const_iterator it;
-    if ((it = find(lookups_.begin(), lookups_.end(), var)) != lookups_.end()) {
-      string cycle;
+    auto it = std::find(lookups_.begin(), lookups_.end(), var);
+    if (it != lookups_.end()) {
+      std::string cycle;
       for (; it != lookups_.end(); ++it)
         cycle.append(*it + " -> ");
       cycle.append(var);
@@ -369,13 +454,17 @@ string EdgeEnv::LookupVariable(const string& var) {
 
   // See notes on BindingEnv::LookupWithFallback.
   const EvalString* eval = edge_->rule_->GetBinding(var);
-  if (recursive_ && eval)
+  bool record_varname = recursive_ && eval;
+  if (record_varname)
     lookups_.push_back(var);
 
   // In practice, variables defined on rules never use another rule variable.
   // For performance, only start checking for cycles after the first lookup.
   recursive_ = true;
-  return edge_->env_->LookupWithFallback(var, eval, this);
+  std::string result = edge_->env_->LookupWithFallback(var, eval, this);
+  if (record_varname)
+    lookups_.pop_back();
+  return result;
 }
 
 std::string EdgeEnv::MakePathList(const Node* const* const span,
@@ -396,6 +485,28 @@ std::string EdgeEnv::MakePathList(const Node* const* const span,
     }
   }
   return result;
+}
+
+void Edge::CollectInputs(bool shell_escape,
+                         std::vector<std::string>* out) const {
+  for (std::vector<Node*>::const_iterator it = inputs_.begin();
+       it != inputs_.end(); ++it) {
+    std::string path = (*it)->PathDecanonicalized();
+    if (shell_escape) {
+      std::string unescaped;
+      unescaped.swap(path);
+#ifdef _WIN32
+      GetWin32EscapedString(unescaped, &path);
+#else
+      GetShellEscapedString(unescaped, &path);
+#endif
+    }
+#if __cplusplus >= 201103L
+    out->push_back(std::move(path));
+#else
+    out->push_back(path);
+#endif
+  }
 }
 
 std::string Edge::EvaluateCommand(const bool incl_rsp_file) const {
@@ -443,6 +554,13 @@ void Edge::Dump(const char* prefix) const {
        i != outputs_.end() && *i != NULL; ++i) {
     printf("%s ", (*i)->path().c_str());
   }
+  if (!validations_.empty()) {
+    printf(" validations ");
+    for (std::vector<Node*>::const_iterator i = validations_.begin();
+         i != validations_.end() && *i != NULL; ++i) {
+      printf("%s ", (*i)->path().c_str());
+    }
+  }
   if (pool_) {
     if (!pool_->name().empty()) {
       printf("(in pool '%s')", pool_->name().c_str());
@@ -487,7 +605,7 @@ string Node::PathDecanonicalized(const string& path, uint64_t slash_bits) {
 void Node::Dump(const char* prefix) const {
   printf("%s <%s 0x%p> mtime: %" PRId64 "%s, (:%s), ",
          prefix, path().c_str(), this,
-         mtime(), mtime() ? "" : " (:missing)",
+         mtime(), exists() ? "" : " (:missing)",
          dirty() ? " dirty" : " clean");
   if (in_edge()) {
     in_edge()->Dump("in-edge: ");
@@ -498,6 +616,13 @@ void Node::Dump(const char* prefix) const {
   for (vector<Edge*>::const_iterator e = out_edges().begin();
        e != out_edges().end() && *e != NULL; ++e) {
     (*e)->Dump(" +- ");
+  }
+  if (!validation_out_edges().empty()) {
+    printf(" validation out edges:\n");
+    for (std::vector<Edge*>::const_iterator e = validation_out_edges().begin();
+         e != validation_out_edges().end() && *e != NULL; ++e) {
+      (*e)->Dump(" +- ");
+    }
   }
 }
 
@@ -515,7 +640,7 @@ bool ImplicitDepLoader::LoadDeps(Edge* edge, string* err) {
 }
 
 struct matches {
-  matches(std::vector<StringPiece>::iterator i) : i_(i) {}
+  explicit matches(std::vector<StringPiece>::iterator i) : i_(i) {}
 
   bool operator()(const Node* node) const {
     StringPiece opath = StringPiece(node->path());
@@ -562,11 +687,8 @@ bool ImplicitDepLoader::LoadDepFile(Edge* edge, const string& path,
 
   uint64_t unused;
   std::vector<StringPiece>::iterator primary_out = depfile.outs_.begin();
-  if (!CanonicalizePath(const_cast<char*>(primary_out->str_),
-                        &primary_out->len_, &unused, err)) {
-    *err = path + ": " + *err;
-    return false;
-  }
+  CanonicalizePath(const_cast<char*>(primary_out->str_), &primary_out->len_,
+                   &unused);
 
   // Check that this depfile matches the edge's output, if not return false to
   // mark the edge as dirty.
@@ -588,22 +710,23 @@ bool ImplicitDepLoader::LoadDepFile(Edge* edge, const string& path,
     }
   }
 
+  return ProcessDepfileDeps(edge, &depfile.ins_, err);
+}
+
+bool ImplicitDepLoader::ProcessDepfileDeps(
+    Edge* edge, std::vector<StringPiece>* depfile_ins, std::string* err) {
   // Preallocate space in edge->inputs_ to be filled in below.
   vector<Node*>::iterator implicit_dep =
-      PreallocateSpace(edge, depfile.ins_.size());
+      PreallocateSpace(edge, depfile_ins->size());
 
   // Add all its in-edges.
-  for (vector<StringPiece>::iterator i = depfile.ins_.begin();
-       i != depfile.ins_.end(); ++i, ++implicit_dep) {
+  for (std::vector<StringPiece>::iterator i = depfile_ins->begin();
+       i != depfile_ins->end(); ++i, ++implicit_dep) {
     uint64_t slash_bits;
-    if (!CanonicalizePath(const_cast<char*>(i->str_), &i->len_, &slash_bits,
-                          err))
-      return false;
-
+    CanonicalizePath(const_cast<char*>(i->str_), &i->len_, &slash_bits);
     Node* node = state_->GetNode(*i, slash_bits);
     *implicit_dep = node;
     node->AddOutEdge(edge);
-    CreatePhonyInEdge(node);
   }
 
   return true;
@@ -631,7 +754,6 @@ bool ImplicitDepLoader::LoadDepsFromLog(Edge* edge, string* err) {
     Node* node = deps->nodes[i];
     *implicit_dep = node;
     node->AddOutEdge(edge);
-    CreatePhonyInEdge(node);
   }
   return true;
 }
@@ -642,21 +764,4 @@ vector<Node*>::iterator ImplicitDepLoader::PreallocateSpace(Edge* edge,
                        (size_t)count, 0);
   edge->implicit_deps_ += count;
   return edge->inputs_.end() - edge->order_only_deps_ - count;
-}
-
-void ImplicitDepLoader::CreatePhonyInEdge(Node* node) {
-  if (node->in_edge())
-    return;
-
-  Edge* phony_edge = state_->AddEdge(&State::kPhonyRule);
-  node->set_in_edge(phony_edge);
-  phony_edge->outputs_.push_back(node);
-
-  // RecomputeDirty might not be called for phony_edge if a previous call
-  // to RecomputeDirty had caused the file to be stat'ed.  Because previous
-  // invocations of RecomputeDirty would have seen this node without an
-  // input edge (and therefore ready), we have to set outputs_ready_ to true
-  // to avoid a potential stuck build.  If we do call RecomputeDirty for
-  // this node, it will simply set outputs_ready_ to the correct value.
-  phony_edge->outputs_ready_ = true;
 }

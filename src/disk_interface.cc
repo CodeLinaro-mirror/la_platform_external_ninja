@@ -23,9 +23,10 @@
 #include <sys/types.h>
 
 #ifdef _WIN32
-#include <sstream>
-#include <windows.h>
 #include <direct.h>  // _mkdir
+#include <windows.h>
+
+#include <sstream>
 #else
 #include <unistd.h>
 #endif
@@ -110,7 +111,8 @@ bool StatAllFilesInDir(const string& dir, map<string, TimeStamp>* stamps,
 
   if (find_handle == INVALID_HANDLE_VALUE) {
     DWORD win_err = GetLastError();
-    if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND)
+    if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND ||
+        win_err == ERROR_DIRECTORY)
       return true;
     *err = "FindFirstFileExA(" + dir + "): " + GetLastErrorString();
     return false;
@@ -156,13 +158,31 @@ bool DiskInterface::MakeDirs(const string& path) {
 }
 
 // RealDiskInterface -----------------------------------------------------------
+RealDiskInterface::RealDiskInterface() 
+#ifdef _WIN32
+: use_cache_(false), long_paths_enabled_(false) {
+  // Probe ntdll.dll for RtlAreLongPathsEnabled, and call it if it exists.
+  HINSTANCE ntdll_lib = ::GetModuleHandleW(L"ntdll");
+  if (ntdll_lib) {
+    typedef BOOLEAN(WINAPI FunctionType)();
+    auto* func_ptr = reinterpret_cast<FunctionType*>(
+        ::GetProcAddress(ntdll_lib, "RtlAreLongPathsEnabled"));
+    if (func_ptr) {
+      long_paths_enabled_ = (*func_ptr)();
+    }
+  }
+}
+#else
+{}
+#endif
 
 TimeStamp RealDiskInterface::Stat(const string& path, string* err) const {
   METRIC_RECORD("node stat");
 #ifdef _WIN32
   // MSDN: "Naming Files, Paths, and Namespaces"
   // http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
-  if (!path.empty() && path[0] != '\\' && path.size() > MAX_PATH) {
+  if (!path.empty() && !AreLongPathsEnabled() && path[0] != '\\' &&
+      path.size() > MAX_PATH) {
     ostringstream err_stream;
     err_stream << "Stat(" << path << "): Filename longer than " << MAX_PATH
                << " characters";
@@ -180,12 +200,13 @@ TimeStamp RealDiskInterface::Stat(const string& path, string* err) const {
     dir = path;
   }
 
-  transform(dir.begin(), dir.end(), dir.begin(), ::tolower);
+  string dir_lowercase = dir;
+  transform(dir.begin(), dir.end(), dir_lowercase.begin(), ::tolower);
   transform(base.begin(), base.end(), base.begin(), ::tolower);
 
-  Cache::iterator ci = cache_.find(dir);
+  Cache::iterator ci = cache_.find(dir_lowercase);
   if (ci == cache_.end()) {
-    ci = cache_.insert(make_pair(dir, DirCache())).first;
+    ci = cache_.insert(make_pair(dir_lowercase, DirCache())).first;
     if (!StatAllFilesInDir(dir.empty() ? "." : dir, &ci->second, err)) {
       cache_.erase(ci);
       return -1;
@@ -194,8 +215,13 @@ TimeStamp RealDiskInterface::Stat(const string& path, string* err) const {
   DirCache::iterator di = ci->second.find(base);
   return di != ci->second.end() ? di->second : 0;
 #else
+#ifdef __USE_LARGEFILE64
+  struct stat64 st;
+  if (stat64(path.c_str(), &st) < 0) {
+#else
   struct stat st;
   if (stat(path.c_str(), &st) < 0) {
+#endif
     if (errno == ENOENT || errno == ENOTDIR)
       return 0;
     *err = "stat(" + path + "): " + strerror(errno);
@@ -265,6 +291,47 @@ FileReader::Status RealDiskInterface::ReadFile(const string& path,
 }
 
 int RealDiskInterface::RemoveFile(const string& path) {
+#ifdef _WIN32
+  DWORD attributes = GetFileAttributesA(path.c_str());
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    DWORD win_err = GetLastError();
+    if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND) {
+      return 1;
+    }
+  } else if (attributes & FILE_ATTRIBUTE_READONLY) {
+    // On non-Windows systems, remove() will happily delete read-only files.
+    // On Windows Ninja should behave the same:
+    //   https://github.com/ninja-build/ninja/issues/1886
+    // Skip error checking.  If this fails, accept whatever happens below.
+    SetFileAttributesA(path.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
+  }
+  if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
+    // remove() deletes both files and directories. On Windows we have to 
+    // select the correct function (DeleteFile will yield Permission Denied when
+    // used on a directory)
+    // This fixes the behavior of ninja -t clean in some cases
+    // https://github.com/ninja-build/ninja/issues/828
+    if (!RemoveDirectoryA(path.c_str())) {
+      DWORD win_err = GetLastError();
+      if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND) {
+        return 1;
+      }
+      // Report remove(), not RemoveDirectory(), for cross-platform consistency.
+      Error("remove(%s): %s", path.c_str(), GetLastErrorString().c_str());
+      return -1;
+    }
+  } else {
+    if (!DeleteFileA(path.c_str())) {
+      DWORD win_err = GetLastError();
+      if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND) {
+        return 1;
+      }
+      // Report as remove(), not DeleteFile(), for cross-platform consistency.
+      Error("remove(%s): %s", path.c_str(), GetLastErrorString().c_str());
+      return -1;
+    }
+  }
+#else
   if (remove(path.c_str()) < 0) {
     switch (errno) {
       case ENOENT:
@@ -273,9 +340,9 @@ int RealDiskInterface::RemoveFile(const string& path) {
         Error("remove(%s): %s", path.c_str(), strerror(errno));
         return -1;
     }
-  } else {
-    return 0;
   }
+#endif
+  return 0;
 }
 
 void RealDiskInterface::AllowStatCache(bool allow) {
@@ -285,3 +352,9 @@ void RealDiskInterface::AllowStatCache(bool allow) {
     cache_.clear();
 #endif
 }
+
+#ifdef _WIN32
+bool RealDiskInterface::AreLongPathsEnabled(void) const {
+  return long_paths_enabled_;
+}
+#endif
