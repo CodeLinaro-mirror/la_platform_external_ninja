@@ -133,6 +133,7 @@ struct NinjaMain : public BuildLogUser {
                               vector<Node*>* targets, string* err);
 
   // The various subcommands, run via "-t XXX".
+  int ToolDefaults(const Options* options, int argc, char* argv[]);
   int ToolGraph(const Options* options, int argc, char* argv[]);
   int ToolPath(const Options* options, int argc, char* argv[]);
   int ToolPaths(const Options* options, int argc, char* argv[]);
@@ -361,6 +362,23 @@ bool NinjaMain::CollectTargetsFromArgs(int argc, char* argv[],
     targets->push_back(node);
   }
   return true;
+}
+
+int NinjaMain::ToolDefaults(const Options* options, int argc, char* argv[]) {
+  if (argc != 0) {
+    Error("Defaults tool accepts no arguments");
+    return 1;
+  }
+  string err;
+  vector<Node*> nodes = state_.DefaultNodes(&err);
+  if (!err.empty()) {
+    Error("%s", err.c_str());
+    return 1;
+  }
+  for (Node* node : nodes) {
+    printf("%s\n", node->path().c_str());
+  }
+  return 0;
 }
 
 int NinjaMain::ToolGraph(const Options* options, int argc, char* argv[]) {
@@ -1110,6 +1128,8 @@ const Tool* ChooseTool(const string& tool_name) {
       Tool::RUN_AFTER_LOAD, &NinjaMain::ToolClean },
     { "commands", "list all commands required to rebuild given targets",
       Tool::RUN_AFTER_LOAD, &NinjaMain::ToolCommands },
+    { "defaults", "output list of default targets",
+      Tool::RUN_AFTER_LOAD, &NinjaMain::ToolDefaults },
     { "deps", "show dependencies stored in the deps log",
       Tool::RUN_AFTER_LOGS, &NinjaMain::ToolDeps },
     { "graph", "output graphviz dot file for targets",
