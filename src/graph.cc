@@ -280,9 +280,8 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
     }
 
     // Load output mtimes so we can compare them to the most recent input below.
-    for (vector<Node*>::iterator o = edge->outputs_.begin();
-         o != edge->outputs_.end(); ++o) {
-      if (!(*o)->StatIfNecessary(disk_interface_, err))
+    for (Node* o : edge->outputs_) {
+      if (!o->StatIfNecessary(disk_interface_, err))
         return false;
     }
 
@@ -309,34 +308,34 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
 
   // Visit all inputs; we're dirty if any of the inputs are dirty.
   Node* most_recent_input = NULL;
-  for (vector<Node*>::iterator i = edge->inputs_.begin();
-       i != edge->inputs_.end(); ++i) {
+  for (size_t i = 0; i < edge->inputs_.size(); ++i) {
+    Node* n = edge->inputs_[i];
     // Visit this input.
-    if (!RecomputeNodeDirty(*i, stack, validation_nodes, err))
+    if (!RecomputeNodeDirty(n, stack, validation_nodes, err))
       return false;
 
     // If an input is not ready, neither are our outputs.
-    Edge* in_edge = (*i)->in_edge();
+    Edge* in_edge = n->in_edge();
     if (in_edge != nullptr) {
       if (!in_edge->outputs_ready_)
         edge->outputs_ready_ = false;
     }
 
-    if (!phony_output && !edge->is_order_only(i - edge->inputs_.begin())) {
+    if (!phony_output && !edge->is_order_only(i)) {
       if (in_edge != nullptr && in_edge->IsPhonyOutput()) {
         *err = "real file '" + node->globalPath().h.str_view().AsString() +
-               "' depends on phony output '" + (*i)->globalPath().h.str_view().AsString() + "'\n";
+               "' depends on phony output '" + n->globalPath().h.str_view().AsString() + "'\n";
         return false;
       }
 
       // If a regular input is dirty (or missing), we're dirty.
       // Otherwise consider mtime.
-      if ((*i)->dirty()) {
-        EXPLAIN("%s is dirty", (*i)->globalPath().h.data());
+      if (n->dirty()) {
+        EXPLAIN("%s is dirty", n->globalPath().h.data());
         dirty = true;
       } else {
-        if (!most_recent_input || (*i)->mtime() > most_recent_input->mtime()) {
-          most_recent_input = *i;
+        if (!most_recent_input || n->mtime() > most_recent_input->mtime()) {
+          most_recent_input = n;
         }
       }
     }
@@ -348,20 +347,21 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
     if (!RecomputeOutputsDirty(edge, most_recent_input, &dirty, err))
       return false;
 
-  // Finally, visit each output and update their dirty state if necessary.
-  for (vector<Node*>::iterator o = edge->outputs_.begin();
-       o != edge->outputs_.end(); ++o) {
-    if (dirty)
-      (*o)->MarkDirty();
+  if (dirty) {
+    // Finally, visit each output and update their dirty state if necessary.
+    for (Node* o : edge->outputs_) {
+      o->MarkDirty();
+    }
+
+    // If an edge is dirty, its outputs are normally not ready.  (It's
+    // possible to be clean but still not be ready in the presence of
+    // order-only inputs.)
+    // But phony edges with no inputs have nothing to do, so are always
+    // ready.
+    if (!edge->is_phony() || !edge->inputs_.empty())
+      edge->outputs_ready_ = false;
   }
 
-  // If an edge is dirty, its outputs are normally not ready.  (It's
-  // possible to be clean but still not be ready in the presence of
-  // order-only inputs.)
-  // But phony edges with no inputs have nothing to do, so are always
-  // ready.
-  if (dirty && !(edge->is_phony() && edge->inputs_.empty()))
-    edge->outputs_ready_ = false;
 
   // Mark the edge as finished during this walk now that it will no longer
   // be in the call stack.
@@ -416,21 +416,20 @@ bool DependencyScan::RecomputeOutputsDirty(Edge* edge, Node* most_recent_input,
   assert(!edge->IsPhonyOutput());
 
   uint64_t command_hash = edge->GetCommandHash();
-  for (vector<Node*>::iterator o = edge->outputs_.begin();
-       o != edge->outputs_.end(); ++o) {
+  for (Node* o : edge->outputs_) {
     if (edge->is_phony()) {
       // Phony edges don't write any output.  Outputs are only dirty if
       // there are no inputs and we're missing the output.
-      if (edge->inputs_.empty() && !(*o)->exists()) {
+      if (edge->inputs_.empty() && !o->exists()) {
         // For phony targets defined in the ninja file, error when using dirty phony edges.
         // The phony edges automatically created from depfiles still need the old behavior.
         if (missing_phony_is_err_ && !edge->phony_from_depfile_) {
-          *err = "output " + (*o)->globalPath().h.str_view().AsString() +
+          *err = "output " + o->globalPath().h.str_view().AsString() +
                 " of phony edge doesn't exist. Missing 'phony_output = true'?";
           return false;
         } else {
           EXPLAIN("output %s of phony edge with no inputs doesn't exist",
-                  (*o)->globalPath().h.data());
+                  o->globalPath().h.data());
           *outputs_dirty = true;
           return true;
         }
@@ -439,11 +438,11 @@ bool DependencyScan::RecomputeOutputsDirty(Edge* edge, Node* most_recent_input,
       // Update the mtime with the newest input. Dependents can thus call mtime()
       // on the fake node and get the latest mtime of the dependencies
       if (most_recent_input) {
-        (*o)->UpdatePhonyMtime(most_recent_input->mtime());
+        o->UpdatePhonyMtime(most_recent_input->mtime());
       }
       continue;
     }
-    if (RecomputeOutputDirty(edge, most_recent_input, command_hash, *o)) {
+    if (RecomputeOutputDirty(edge, most_recent_input, command_hash, o)) {
       *outputs_dirty = true;
       return true;
     }
@@ -1036,18 +1035,18 @@ bool ImplicitDepLoader::LoadDepFile(Edge* edge, const string& path,
       PreallocateSpace(edge, depfile.ins_.size());
 
   // Add all its in-edges.
-  for (vector<StringPiece>::iterator i = depfile.ins_.begin();
-       i != depfile.ins_.end(); ++i, ++implicit_dep) {
+  for (StringPiece& i : depfile.ins_) {
     uint64_t slash_bits;
-    if (!CanonicalizePath(const_cast<char*>(i->str_), &i->len_, &slash_bits,
+    if (!CanonicalizePath(const_cast<char*>(i.str_), &i.len_, &slash_bits,
                           err))
       return false;
 
-    Node* node = state_->GetNode(edge->pos_.scope()->GlobalPath(*i),
+    Node* node = state_->GetNode(edge->pos_.scope()->GlobalPath(i),
                                  slash_bits);
     *implicit_dep = node;
     node->AddOutEdgeDepScan(edge);
     CreatePhonyInEdge(node);
+    ++implicit_dep;
   }
 
   return true;
