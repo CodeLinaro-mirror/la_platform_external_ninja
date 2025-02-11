@@ -200,6 +200,7 @@ struct State {
 
   Scope root_scope_ { ScopePosition {} };
   vector<Node*> defaults_;
+  vector<string> manifest_files;
 
 private:
   /// Position 0 is used for built-in decls (e.g. pools).
