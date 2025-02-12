@@ -133,20 +133,21 @@ struct NinjaMain : public BuildLogUser {
                               vector<Node*>* targets, string* err);
 
   // The various subcommands, run via "-t XXX".
+  int ToolBrowse(const Options* options, int argc, char* argv[]);
+  int ToolClean(const Options* options, int argc, char* argv[]);
+  int ToolCommands(const Options* options, int argc, char* argv[]);
+  int ToolCompilationDatabase(const Options* options, int argc, char* argv[]);
   int ToolDefaults(const Options* options, int argc, char* argv[]);
+  int ToolDeps(const Options* options, int argc, char* argv[]);
   int ToolGraph(const Options* options, int argc, char* argv[]);
+  int ToolInputs(const Options* options, int argc, char* argv[]);
+  int ToolMSVC(const Options* options, int argc, char* argv[]);
+  int ToolNinjaFiles(const Options* options, int argc, char* argv[]);
   int ToolPath(const Options* options, int argc, char* argv[]);
   int ToolPaths(const Options* options, int argc, char* argv[]);
-  int ToolInputs(const Options* options, int argc, char* argv[]);
   int ToolQuery(const Options* options, int argc, char* argv[]);
-  int ToolDeps(const Options* options, int argc, char* argv[]);
-  int ToolBrowse(const Options* options, int argc, char* argv[]);
-  int ToolMSVC(const Options* options, int argc, char* argv[]);
-  int ToolTargets(const Options* options, int argc, char* argv[]);
-  int ToolCommands(const Options* options, int argc, char* argv[]);
-  int ToolClean(const Options* options, int argc, char* argv[]);
-  int ToolCompilationDatabase(const Options* options, int argc, char* argv[]);
   int ToolRecompact(const Options* options, int argc, char* argv[]);
+  int ToolTargets(const Options* options, int argc, char* argv[]);
   int ToolUrtle(const Options* options, int argc, char** argv);
 
   /// Open the build log.
@@ -708,6 +709,18 @@ int NinjaMain::ToolMSVC(const Options* options, int argc, char* argv[]) {
 }
 #endif
 
+int NinjaMain::ToolNinjaFiles(const Options* options, int argc, char* argv[]) {
+  if (argc != 0) {
+    Error("ninja_files tool accepts no arguments");
+    return 1;
+  }
+  std::sort(state_.manifest_files.begin(), state_.manifest_files.end());
+  for (const std::string& manifest_file : state_.manifest_files) {
+    printf("%s\n", manifest_file.c_str());
+  }
+  return 0;
+}
+
 int ToolTargetsList(const vector<Node*>& nodes, int depth, int indent) {
   for (vector<Node*>::const_iterator n = nodes.begin();
        n != nodes.end();
@@ -1120,14 +1133,12 @@ const Tool* ChooseTool(const string& tool_name) {
   static const Tool kTools[] = {
     { "browse", "browse dependency graph in a web browser",
       Tool::RUN_AFTER_LOAD, &NinjaMain::ToolBrowse },
-#if defined(_MSC_VER)
-    { "msvc", "build helper for MSVC cl.exe (EXPERIMENTAL)",
-      Tool::RUN_AFTER_FLAGS, &NinjaMain::ToolMSVC },
-#endif
     { "clean", "clean built files",
       Tool::RUN_AFTER_LOAD, &NinjaMain::ToolClean },
     { "commands", "list all commands required to rebuild given targets",
       Tool::RUN_AFTER_LOAD, &NinjaMain::ToolCommands },
+    { "compdb",  "dump JSON compilation database to stdout",
+      Tool::RUN_AFTER_LOAD, &NinjaMain::ToolCompilationDatabase },
     { "defaults", "output list of default targets",
       Tool::RUN_AFTER_LOAD, &NinjaMain::ToolDefaults },
     { "deps", "show dependencies stored in the deps log",
@@ -1136,18 +1147,22 @@ const Tool* ChooseTool(const string& tool_name) {
       Tool::RUN_AFTER_LOAD, &NinjaMain::ToolGraph },
     { "inputs", "show all (recursive) inputs for a target",
       Tool::RUN_AFTER_LOGS, &NinjaMain::ToolInputs },
+#if defined(_MSC_VER)
+    { "msvc", "build helper for MSVC cl.exe (EXPERIMENTAL)",
+      Tool::RUN_AFTER_FLAGS, &NinjaMain::ToolMSVC },
+#endif
+    { "ninja_files", "List all ninja files recursively loaded from the root one",
+      Tool::RUN_AFTER_LOAD, &NinjaMain::ToolNinjaFiles },
     { "path", "find dependency path between two targets",
       Tool::RUN_AFTER_LOGS, &NinjaMain::ToolPath },
     { "paths", "find all dependency paths between two targets",
       Tool::RUN_AFTER_LOGS, &NinjaMain::ToolPaths },
     { "query", "show inputs/outputs for a path",
       Tool::RUN_AFTER_LOGS, &NinjaMain::ToolQuery },
-    { "targets",  "list targets by their rule or depth in the DAG",
-      Tool::RUN_AFTER_LOAD, &NinjaMain::ToolTargets },
-    { "compdb",  "dump JSON compilation database to stdout",
-      Tool::RUN_AFTER_LOAD, &NinjaMain::ToolCompilationDatabase },
     { "recompact",  "recompacts ninja-internal data structures",
       Tool::RUN_AFTER_LOAD, &NinjaMain::ToolRecompact },
+    { "targets",  "list targets by their rule or depth in the DAG",
+      Tool::RUN_AFTER_LOAD, &NinjaMain::ToolTargets },
     { "urtle", NULL,
       Tool::RUN_AFTER_FLAGS, &NinjaMain::ToolUrtle },
     { NULL, NULL, Tool::RUN_AFTER_FLAGS, NULL }

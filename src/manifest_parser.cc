@@ -101,6 +101,7 @@ struct ManifestFileSet {
   // TODO: use fork() so Getcwd() is no longer needed.
   bool Getcwd(std::string* out_path, std::string* err);
   bool Chdir(const std::string dir, std::string* err);
+  std::vector<std::string> GetFileNames();
 
 private:
   FileReader *file_reader_ = nullptr;
@@ -130,6 +131,15 @@ bool ManifestFileSet::LoadFile(const std::string& filename,
   loaded_files_.push_back(std::move(loaded_file));
   *result = loaded_files_.back().get();
   return true;
+}
+
+std::vector<std::string> ManifestFileSet::GetFileNames() {
+  std::vector<std::string> result;
+  result.reserve(loaded_files_.size());
+  for (const auto& lf : loaded_files_) {
+    result.push_back(lf->filename());
+  }
+  return result;
 }
 
 struct DfsParser {
@@ -782,7 +792,9 @@ bool ManifestParser::Load(const string& filename, string* err) {
 
   std::unique_ptr<ThreadPool> thread_pool = CreateThreadPool();
   ManifestLoader loader(state_, thread_pool.get(), options_, false);
-  return loader.Load(&file_set, *file, err);
+  bool result = loader.Load(&file_set, *file, err);
+  state_->manifest_files = file_set.GetFileNames();
+  return result;
 }
 
 bool ManifestParser::ParseTest(const string& input, string* err) {
