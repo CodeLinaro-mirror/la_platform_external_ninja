@@ -308,6 +308,7 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
 
   // Visit all inputs; we're dirty if any of the inputs are dirty.
   Node* most_recent_input = NULL;
+  std::vector<Node*> dirty_inputs;
   for (size_t i = 0; i < edge->inputs_.size(); ++i) {
     Node* n = edge->inputs_[i];
     // Visit this input.
@@ -331,7 +332,8 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
       // If a regular input is dirty (or missing), we're dirty.
       // Otherwise consider mtime.
       if (n->dirty()) {
-        EXPLAIN("%s is dirty", n->globalPath().h.data());
+        dirty_inputs.push_back(n);
+        EXPLAIN("%s is dirty%s", n->globalPath().h.data(), n->DirtyBecause().c_str());
         dirty = true;
       } else {
         if (!most_recent_input || n->mtime() > most_recent_input->mtime()) {
@@ -351,6 +353,16 @@ bool DependencyScan::RecomputeNodeDirty(Node* node, std::vector<Node*>* stack,
     // Finally, visit each output and update their dirty state if necessary.
     for (Node* o : edge->outputs_) {
       o->MarkDirty();
+      // Construct the string to explain which inputs were dirty in explain mode.
+      if (g_explaining && dirty_inputs.size() > 0) {
+        std::string dirty_because_string = " because ";
+        for (Node* n : dirty_inputs) {
+          dirty_because_string += n->globalPath().h.data();
+          dirty_because_string += " ";
+        }
+        dirty_because_string += "are dirty";
+        o->SetDirtyBecause(dirty_because_string);
+      }
     }
 
     // If an edge is dirty, its outputs are normally not ready.  (It's

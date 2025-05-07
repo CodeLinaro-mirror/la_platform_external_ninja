@@ -189,6 +189,8 @@ struct Node {
   bool dirty() const { return dirty_; }
   void set_dirty(bool dirty) { dirty_ = dirty; }
   void MarkDirty() { dirty_ = true; }
+  void SetDirtyBecause(std::string dirty_because) { dirty_because_ = dirty_because; }
+  std::string DirtyBecause() { return dirty_because_; }
 
   bool precomputed_dirtiness() const { return precomputed_dirtiness_; }
   void set_precomputed_dirtiness(bool value) { precomputed_dirtiness_ = value; }
@@ -259,6 +261,8 @@ private:
   /// But note that Edge::outputs_ready_ is also used in judging which
   /// edges to build.
   bool dirty_ = false;
+
+  std::string dirty_because_ = "";
 
   /// Set to true once the node's stat and command-hash info have been
   /// precomputed.
