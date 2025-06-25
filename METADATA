@@ -7,14 +7,14 @@ description: "ninja build tool"
 third_party {
   license_type: NOTICE
   last_upgrade_date {
-    year: 2024
-    month: 9
-    day: 6
+    year: 2025
+    month: 6
+    day: 25
   }
   homepage: "https://ninja-build.org/"
   identifier {
     type: "Git"
     value: "https://github.com/ninja-build/ninja"
-    version: "v1.12.1"
+    version: "v1.13.0"
   }
 }
