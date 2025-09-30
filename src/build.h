@@ -226,6 +226,12 @@ struct BuildConfig {
   std::optional<std::string> weight_list_path;
 
   bool ninja_log_as_weight_list;
+
+  std::string nsjail_path;
+  std::string nsjail_workdir;
+  std::string build_dir;
+
+  std::filesystem::path cwd;
 };
 
 /// Builder wraps the build process: starting commands, updating status.

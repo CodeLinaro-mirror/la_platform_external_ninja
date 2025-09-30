@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "subprocess.h"
-
 #include <sys/select.h>
 #include <assert.h>
 #include <errno.h>
@@ -24,9 +22,20 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <spawn.h>
+#include <filesystem>
+#include <iostream>
+#include <system_error>
 
 extern char** environ;
 
+#include "google/protobuf/text_format.h"
+#include "google/protobuf/io/zero_copy_stream_impl.h"
+
+#include "build.h"
+// nsjail config
+#include "config.pb.h"
+#include "graph.h"
+#include "subprocess.h"
 #include "util.h"
 
 Subprocess::Subprocess(bool use_console) : fd_(-1), pid_(-1),
@@ -41,8 +50,24 @@ Subprocess::~Subprocess() {
     Finish();
 }
 
-bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd,
+std::filesystem::path Subprocess::OutPathToNsjailOutPath(const std::string& out) {
+    const std::string& build_dir = config_->build_dir;
+    if (build_dir.empty()) {
+      Fatal("builddir must be set when using nsjail sandboxing");
+    }
+    if (out.rfind(build_dir, 0) != 0) {
+      Fatal("All outputs must be in %s, but %s wasn't", build_dir.c_str(), out.c_str());
+    }
+
+    auto rel = out.substr(build_dir.size());
+    return nsjail_workdir_.value().path() / "out" / rel;
+}
+
+bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, const Edge* edge,
                        int extra_fd) {
+  edge_ = edge;
+  config_ = &set->config_;
+
   int output_pipe[2];
   if (pipe(output_pipe) < 0)
     Fatal("pipe: %s", strerror(errno));
@@ -116,9 +141,160 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd,
   if (err != 0)
     Fatal("posix_spawnattr_setflags: %s", strerror(err));
 
-  const char* spawned_args[] = { "/bin/sh", "-c", cmd.command.c_str(), NULL };
-  err = posix_spawn(&pid_, "/bin/sh", &action, &attr,
-        const_cast<char**>(spawned_args), cmd.env ? cmd.env : environ);
+  std::vector<const char*> args;
+  std::vector<std::string> buff;
+  if (set->config_.nsjail_path.empty() || cmd.sandbox == EdgeSandbox::NONE || edge == nullptr) {
+    args.push_back("/bin/sh");
+    args.push_back("-c");
+    args.push_back(cmd.command.c_str());
+  } else {
+    std::error_code ec;
+    nsjail_workdir_ = TempDir::createInDir(set->config_.nsjail_workdir, ec);
+    if (ec) {
+      Fatal("Failed to create temporary directory: %s", ec.message().c_str());
+    }
+    for (Node* output : edge->outputs_) {
+      auto dir = OutPathToNsjailOutPath(output->path()).parent_path();
+      std::filesystem::create_directories(dir, ec);
+      if (ec) {
+        Fatal("Failed to create temporary directory: %s", ec.message().c_str());
+      }
+    }
+    args.push_back(set->config_.nsjail_path.c_str());
+    nsjail::NsJailConfig nsjailConfig;
+    // equivalent to -q, for quiet execution
+    nsjailConfig.set_log_level(nsjail::WARNING);
+    nsjailConfig.set_disable_rl(true);
+    nsjailConfig.set_cwd("/src");
+
+    // TODO: Better environment variable sandboxing
+    nsjailConfig.set_keep_env(true);
+
+    // TODO: Make the globally included directories like this customizable, and eventually phase
+    // them out.
+    auto binMount = nsjailConfig.add_mount();
+    binMount->set_src("/bin");
+    binMount->set_dst("/bin");
+    binMount->set_is_bind(true);
+    binMount->set_is_dir(true);
+    auto libMount = nsjailConfig.add_mount();
+    libMount->set_src("/lib");
+    libMount->set_dst("/lib");
+    libMount->set_is_bind(true);
+    binMount->set_is_dir(true);
+    auto lib64Mount = nsjailConfig.add_mount();
+    lib64Mount->set_src("/lib64");
+    lib64Mount->set_dst("/lib64");
+    lib64Mount->set_is_bind(true);
+    binMount->set_is_dir(true);
+    auto usrMount = nsjailConfig.add_mount();
+    usrMount->set_src("/usr");
+    usrMount->set_dst("/usr");
+    usrMount->set_is_bind(true);
+    binMount->set_is_dir(true);
+
+
+    // Add a tmp directory. Using a directory in the working directory instead of a tmpfs mount
+    // so that we don't have to worry about how big of a tmpfs to make.
+    auto temp_dir = nsjail_workdir_.value().path() / "tmp";
+    std::filesystem::create_directory(temp_dir);
+    auto tmpMount = nsjailConfig.add_mount();
+    tmpMount->set_src(temp_dir.generic_string());
+    tmpMount->set_dst("/tmp");
+    tmpMount->set_is_bind(true);
+    binMount->set_is_dir(true);
+    tmpMount->set_rw(true);
+
+    // Add the source directory. Normally this is not necessary, because the -R flags for the
+    // input files would cause nsjail to create it. But in cases where the action has no inputs
+    // or all the inputs are from an absolute out/ directory, it won't be created by nsjail
+    // automatically and the --cwd /src flag will fail.
+    auto src_dir = nsjail_workdir_.value().path() / "src";
+    std::filesystem::create_directory(src_dir);
+    auto srcMount = nsjailConfig.add_mount();
+    srcMount->set_src(src_dir.generic_string());
+    srcMount->set_dst("/src");
+    binMount->set_is_dir(true);
+    srcMount->set_is_bind(true);
+
+
+    // Add the out directory. It needs to be in a location that still matches all the
+    // output paths in the ninja file, so that we don't need to rewrite those paths. So if
+    // the out directory is at an absolute path, keep it in the same location. If it's at a
+    // relative path, move it to be relative to /src/.
+    const std::string& out_dir = set->config_.build_dir;
+    if (out_dir.empty()) {
+      Fatal("builddir must be set when using nsjail sandboxing");
+    }
+    auto absolute_out_dir = nsjail_workdir_.value().path() / "out";
+    std::filesystem::create_directory(absolute_out_dir);
+    auto absolute_out_dir_in_sandbox = out_dir;
+    if (out_dir.rfind("/", 0) != 0) {
+      absolute_out_dir_in_sandbox = std::filesystem::path("/src") / absolute_out_dir_in_sandbox;
+    }
+
+    auto outMount = nsjailConfig.add_mount();
+    outMount->set_src(absolute_out_dir.generic_string());
+    outMount->set_dst(absolute_out_dir_in_sandbox);
+    outMount->set_is_bind(true);
+    binMount->set_is_dir(true);
+    outMount->set_rw(true);
+
+    for (Node* input : edge->inputs_) {
+      auto input_path = set->config_.cwd / input->path();
+      // input_path_in_sandbox is always rooted at /src, unless the path from the ninja file was
+      // an absolute path (like when setting OUT_DIR to an absolute path).
+      auto input_path_in_sandbox = std::filesystem::path("/src") / input->path();
+      std::error_code ec;
+      // TODO: we should reuse the stat-ing from the main ninja work calculations
+      auto stat = std::filesystem::symlink_status(input_path, ec);
+      if (ec) {
+        Fatal("Failed to lstat %s: %s", input_path.generic_string().c_str(), ec.message().c_str());
+      }
+      auto type = stat.type();
+      if (type == std::filesystem::file_type::symlink) {
+        auto link = std::filesystem::read_symlink(input_path);
+        auto inputMount = nsjailConfig.add_mount();
+        inputMount->set_src(link.generic_string());
+        inputMount->set_dst(input_path_in_sandbox.generic_string());
+        inputMount->set_is_symlink(true);
+        inputMount->set_is_dir(false);
+      } else if (type == std::filesystem::file_type::regular) {
+        auto inputMount = nsjailConfig.add_mount();
+        inputMount->set_src(input_path.generic_string());
+        inputMount->set_dst(input_path_in_sandbox.generic_string());
+        inputMount->set_is_bind(true);
+        inputMount->set_is_dir(false);
+      } else {
+        Fatal("Unsupported input file type (usually means this is a directory): %s", input_path.generic_string().c_str());
+      }
+    }
+    auto exe = nsjailConfig.mutable_exec_bin();
+    exe->set_path("/bin/sh");
+    exe->add_arg("-c");
+    exe->add_arg(cmd.command);
+
+    args.push_back("-C");
+
+    auto nsjailConfigFilePath = nsjail_workdir_.value().path() / "nsjail.config";
+    int fd = open(nsjailConfigFilePath.generic_string().c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    // we mostly ignore errors for simplicity here, but nsjail will error out if seeing a -C without
+    // an argument or to a nonexistent file.
+    if (fd >= 0) {
+      {
+        google::protobuf::io::FileOutputStream file_stream(fd);
+        google::protobuf::TextFormat::Print(nsjailConfig, &file_stream);
+      }
+      close(fd);
+
+      buff.push_back(nsjailConfigFilePath.generic_string());
+      args.push_back(buff.back().c_str());
+    }
+  }
+  args.push_back(nullptr);
+
+  err = posix_spawn(&pid_, args.front(), &action, &attr,
+        (char* const*)args.data(), cmd.env ? cmd.env : environ);
   if (err != 0)
     Fatal("posix_spawn: %s", strerror(err));
 
@@ -159,12 +335,32 @@ ExitStatus Subprocess::Finish() {
 
   if (WIFEXITED(status)) {
     int exit = WEXITSTATUS(status);
-    if (exit == 0)
+    if (exit == 0) {
+      if (nsjail_workdir_.has_value()) {
+        for (Node* output : edge_->outputs_) {
+          auto finalOutPath = output->path();
+          auto sandboxedOutPath = OutPathToNsjailOutPath(output->path());
+          std::error_code ec;
+          std::filesystem::rename(sandboxedOutPath, finalOutPath, ec);
+          if (ec) {
+            Fatal("Failed to move %s -> %s: %s", sandboxedOutPath.generic_string().c_str(), finalOutPath.c_str(), ec.message().c_str());
+          }
+        }
+      }
       return ExitSuccess;
+    }
   } else if (WIFSIGNALED(status)) {
     if (WTERMSIG(status) == SIGINT || WTERMSIG(status) == SIGTERM
         || WTERMSIG(status) == SIGHUP)
       return ExitInterrupted;
+  }
+  if (nsjail_workdir_.has_value()) {
+    // keep the directory around for debugging
+    nsjail_workdir_.value().leak();
+
+    buf_.append("Failed command ran in sandbox directory: ");
+    buf_.append(nsjail_workdir_.value().path().generic_string());
+    buf_.append("\n");
   }
   return ExitFailure;
 }
@@ -198,7 +394,7 @@ void SubprocessSet::HandlePendingInterruption() {
     interrupted_ = SIGHUP;
 }
 
-SubprocessSet::SubprocessSet() {
+SubprocessSet::SubprocessSet(const BuildConfig& config): config_(config) {
   sigset_t set;
   sigemptyset(&set);
   sigaddset(&set, SIGINT);
@@ -231,9 +427,9 @@ SubprocessSet::~SubprocessSet() {
     Fatal("sigprocmask: %s", strerror(errno));
 }
 
-Subprocess *SubprocessSet::Add(const EdgeCommand& cmd, int extra_fd) {
+Subprocess *SubprocessSet::Add(const EdgeCommand& cmd, const Edge* edge, int extra_fd) {
   Subprocess *subprocess = new Subprocess(cmd.use_console);
-  if (!subprocess->Start(this, cmd, extra_fd)) {
+  if (!subprocess->Start(this, cmd, edge, extra_fd)) {
     delete subprocess;
     return 0;
   }

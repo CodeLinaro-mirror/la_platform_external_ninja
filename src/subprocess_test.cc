@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "build.h"
 #include "subprocess.h"
 
 #include "test.h"
@@ -32,7 +33,13 @@ const char* kSimpleCommand = "cmd /c dir \\";
 const char* kSimpleCommand = "ls /";
 #endif
 
+BuildConfig default_config;
+
 struct SubprocessTest : public testing::Test {
+  SubprocessTest() : subprocs_(default_config) {
+
+  }
+
   SubprocessSet subprocs_;
 };
 
@@ -42,7 +49,7 @@ struct SubprocessTest : public testing::Test {
 TEST_F(SubprocessTest, BadCommandStderr) {
   EdgeCommand c;
   c.command = "cmd /c ninja_no_such_command";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -58,7 +65,7 @@ TEST_F(SubprocessTest, BadCommandStderr) {
 TEST_F(SubprocessTest, NoSuchCommand) {
   EdgeCommand c;
   c.command = "ninja_no_such_command";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -79,7 +86,7 @@ TEST_F(SubprocessTest, NoSuchCommand) {
 TEST_F(SubprocessTest, InterruptChild) {
   EdgeCommand c;
   c.command = "kill -INT $$";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -92,7 +99,7 @@ TEST_F(SubprocessTest, InterruptChild) {
 TEST_F(SubprocessTest, InterruptParent) {
   EdgeCommand c;
   c.command = "kill -INT $PPID ; sleep 1";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -107,7 +114,7 @@ TEST_F(SubprocessTest, InterruptParent) {
 TEST_F(SubprocessTest, InterruptChildWithSigTerm) {
   EdgeCommand c;
   c.command = "kill -TERM $$";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -120,7 +127,7 @@ TEST_F(SubprocessTest, InterruptChildWithSigTerm) {
 TEST_F(SubprocessTest, InterruptParentWithSigTerm) {
   EdgeCommand c;
   c.command = "kill -TERM $PPID ; sleep 1";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -135,7 +142,7 @@ TEST_F(SubprocessTest, InterruptParentWithSigTerm) {
 TEST_F(SubprocessTest, InterruptChildWithSigHup) {
   EdgeCommand c;
   c.command = "kill -HUP $$";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -148,7 +155,7 @@ TEST_F(SubprocessTest, InterruptChildWithSigHup) {
 TEST_F(SubprocessTest, InterruptParentWithSigHup) {
   EdgeCommand c;
   c.command = "kill -HUP $PPID ; sleep 1";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -167,7 +174,7 @@ TEST_F(SubprocessTest, Console) {
     c.command = "test -t 0 -a -t 1 -a -t 2";
     c.use_console = true;
     Subprocess* subproc =
-        subprocs_.Add(c);
+        subprocs_.Add(c, nullptr);
     ASSERT_NE((Subprocess*)0, subproc);
 
     while (!subproc->Done()) {
@@ -183,7 +190,7 @@ TEST_F(SubprocessTest, Console) {
 TEST_F(SubprocessTest, SetWithSingle) {
   EdgeCommand c;
   c.command = kSimpleCommand;
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   ASSERT_NE((Subprocess *) 0, subproc);
 
   while (!subproc->Done()) {
@@ -211,7 +218,7 @@ TEST_F(SubprocessTest, SetWithMulti) {
   for (int i = 0; i < 3; ++i) {
     EdgeCommand c;
     c.command = kCommands[i];
-    processes[i] = subprocs_.Add(c);
+    processes[i] = subprocs_.Add(c, nullptr);
     ASSERT_NE((Subprocess *) 0, processes[i]);
   }
 
@@ -256,7 +263,7 @@ TEST_F(SubprocessTest, SetWithLots) {
   for (size_t i = 0; i < kNumProcs; ++i) {
     EdgeCommand c;
     c.command = "/bin/echo";
-    Subprocess* subproc = subprocs_.Add(c);
+    Subprocess* subproc = subprocs_.Add(c, nullptr);
     ASSERT_NE((Subprocess *) 0, subproc);
     procs.push_back(subproc);
   }
@@ -278,7 +285,7 @@ TEST_F(SubprocessTest, SetWithLots) {
 TEST_F(SubprocessTest, ReadStdin) {
   EdgeCommand c;
   c.command = "cat -";
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, nullptr);
   while (!subproc->Done()) {
     subprocs_.DoWork();
   }

@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "debug_flags.h"
+#include "subprocess.h"
 
 StatusPrinter::StatusPrinter(const BuildConfig& config)
     : config_(config),
@@ -279,7 +280,7 @@ void StatusPrinter::Debug(const char* msg, ...) {
 #include "proto.h"
 
 StatusSerializer::StatusSerializer(const BuildConfig& config) :
-    config_(config), subprocess_(NULL), total_edges_(0) {
+    config_(config), subprocess_set_(config), subprocess_(NULL), total_edges_(0) {
   if (config.frontend != NULL) {
     int output_pipe[2];
     if (pipe(output_pipe) < 0)
@@ -292,7 +293,7 @@ StatusSerializer::StatusSerializer(const BuildConfig& config) :
     EdgeCommand c;
     c.command = config.frontend;
     c.use_console = true;
-    subprocess_ = subprocess_set_.Add(c, output_pipe[0]);
+    subprocess_ = subprocess_set_.Add(c, nullptr, output_pipe[0]);
     close(output_pipe[0]);
   } else if (config.frontend_file != NULL) {
     f_ = fopen(config.frontend_file, "wb");

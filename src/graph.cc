@@ -632,30 +632,44 @@ static const HashedStrView kDepfile         { "depfile" };
 static const HashedStrView kDyndep          { "dyndep" };
 static const HashedStrView kRspfile         { "rspfile" };
 static const HashedStrView kRspFileContent  { "rspfile_content" };
+static const HashedStrView kSandbox         { "sandbox" };
 
-bool Edge::EvaluateCommand(std::string* out_append, bool incl_rsp_file,
+bool Edge::EvaluateCommand(EdgeCommand* out, bool incl_rsp_file,
                            std::string* err) {
   METRIC_RECORD("eval command");
-  auto len_pre_chdir = out_append->size();
+  auto len_pre_chdir = out->command.size();
   if (!pos_.scope()->chdir().empty()) {
 #ifdef _WIN32
-    out_append->append(NINJA_WIN32_CD_DELIM);
-    out_append->append(pos_.scope()->chdir());
-    out_append->append(NINJA_WIN32_CD_DELIM);
+    out->command.append(NINJA_WIN32_CD_DELIM);
+    out->command.append(pos_.scope()->chdir());
+    out->command.append(NINJA_WIN32_CD_DELIM);
 #else
-    out_append->append("cd \"");
-    out_append->append(pos_.scope()->chdir());
-    out_append->append("\" && ");
+    out->command.append("cd \"");
+    out->command.append(pos_.scope()->chdir());
+    out->command.append("\" && ");
 #endif
   }
-  auto len_post_chdir = out_append->size();
-  if (!EvaluateVariable(out_append, kCommand, pos_.scope(), err))
+  auto len_post_chdir = out->command.size();
+  if (!EvaluateVariable(&out->command, kCommand, pos_.scope(), err))
     return false;
+  std::string sandbox;
+  if (!EvaluateVariable(&sandbox, kSandbox, pos_.scope(), err))
+    return false;
+  if (!sandbox.empty()) {
+    if (sandbox == "false") {
+      out->sandbox = EdgeSandbox::NONE;
+    } else {
+      *err = "invalid value for sandbox variable: " + sandbox;
+      return false;
+    }
+  } else {
+    out->sandbox = EdgeSandbox::UNSPECIFIED;
+  }
   // out_append has the chdir in it, waiting, but the correct output
   // is the empty string if EvaluateVariable() produced the empty string.
   // In other words, clean up chdir if it's the only thing in out_append.
-  if (!pos_.scope()->chdir().empty() && out_append->size() == len_post_chdir) {
-    out_append->resize(len_pre_chdir);
+  if (!pos_.scope()->chdir().empty() && out->command.size() == len_post_chdir) {
+    out->command.resize(len_pre_chdir);
   }
 
   if (incl_rsp_file) {
@@ -663,8 +677,8 @@ bool Edge::EvaluateCommand(std::string* out_append, bool incl_rsp_file,
     if (!EvaluateVariable(&rspfile_content, kRspFileContent, pos_.scope(), err))
       return false;
     if (!rspfile_content.empty()) {
-      out_append->append(";rspfile=");
-      out_append->append(rspfile_content);
+      out->command.append(";rspfile=");
+      out->command.append(rspfile_content);
     }
   }
   return true;
@@ -672,7 +686,7 @@ bool Edge::EvaluateCommand(std::string* out_append, bool incl_rsp_file,
 
 void Edge::EvaluateCommand(EdgeCommand* out, bool incl_rsp_file) {
   std::string err;
-  if (!EvaluateCommand(&out->command, incl_rsp_file, &err))
+  if (!EvaluateCommand(out, incl_rsp_file, &err))
     Fatal("%s", err.c_str());
   out->use_console = use_console();
   out->env = cmdEnviron;
@@ -703,10 +717,10 @@ bool Edge::PrecomputeDepScanInfo(std::string* err) {
   if (!get_bool_var(kPhonyOutput, EdgeEval::kShellEscape, &dep_scan_info_.phony_output)) return false;
 
   // Precompute the command hash.
-  std::string command;
+  EdgeCommand command;
   if (!EvaluateCommand(&command, /*incl_rsp_file=*/true, err))
     return false;
-  dep_scan_info_.command_hash = BuildLog::LogEntry::HashCommand(command);
+  dep_scan_info_.command_hash = BuildLog::LogEntry::HashCommand(command.command);
 
   dep_scan_info_.valid = true;
   return true;

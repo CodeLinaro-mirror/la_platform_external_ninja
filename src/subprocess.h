@@ -37,6 +37,9 @@ using namespace std;
 
 #include "graph.h"
 #include "exit_status.h"
+#include "util.h"
+
+struct BuildConfig;
 
 /// Subprocess wraps a single async subprocess.  It is entirely
 /// passive: it expects the caller to notify it when its fds are ready
@@ -59,10 +62,15 @@ struct Subprocess {
 
  private:
   Subprocess(bool use_console);
-  bool Start(struct SubprocessSet* set, const EdgeCommand& cmd, int extra_fd);
+  bool Start(struct SubprocessSet* set, const EdgeCommand& cmd, const Edge* edge, int extra_fd);
   void OnPipeReady();
 
+  std::filesystem::path OutPathToNsjailOutPath(const std::string& out);
+
+  const BuildConfig* config_;
   string buf_;
+  std::optional<TempDir> nsjail_workdir_;
+  const Edge* edge_ = nullptr;
 
 #ifdef _WIN32
   /// Set up pipe_ as the parent-side pipe of the subprocess; return the
@@ -88,16 +96,17 @@ struct Subprocess {
 /// DoWork() waits for any state change in subprocesses; finished_
 /// is a queue of subprocesses as they finish.
 struct SubprocessSet {
-  SubprocessSet();
+  SubprocessSet(const BuildConfig& config);
   ~SubprocessSet();
 
-  Subprocess* Add(const EdgeCommand& cmd, int extra_fd = -1);
+  Subprocess* Add(const EdgeCommand& cmd, const Edge* edge, int extra_fd = -1);
   bool DoWork();
   Subprocess* NextFinished();
   void Clear();
 
   vector<Subprocess*> running_;
   queue<Subprocess*> finished_;
+  const BuildConfig& config_;
 
 #ifdef _WIN32
   static BOOL WINAPI NotifyInterrupted(DWORD dwCtrlType);

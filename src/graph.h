@@ -306,10 +306,16 @@ typedef std::vector<Node*> DepPath;
 // Find all dependency paths between an input and output node.
 std::vector<DepPath> GetDependencyPaths(Node* in, Node* out);
 
+enum class EdgeSandbox {
+  UNSPECIFIED,
+  NONE
+};
+
 struct EdgeCommand {
   std::string command;
   bool use_console = false;
   char** env = NULL;
+  EdgeSandbox sandbox = EdgeSandbox::UNSPECIFIED;
 };
 
 struct EdgeEval {
@@ -371,7 +377,7 @@ struct Edge {
   /// Expand all variables in a command and return it as a string.
   /// If incl_rsp_file is enabled, the string will also contain the
   /// full contents of a response file (if applicable)
-  bool EvaluateCommand(std::string* out_append, bool incl_rsp_file,
+  bool EvaluateCommand(EdgeCommand* out, bool incl_rsp_file,
                        std::string* err);
 
   /// Convenience method. This method must not be called from a worker thread,

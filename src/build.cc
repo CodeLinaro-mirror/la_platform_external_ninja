@@ -467,7 +467,7 @@ void Plan::Dump() {
 }
 
 struct RealCommandRunner : public CommandRunner {
-  explicit RealCommandRunner(const BuildConfig& config) : config_(config) {}
+  explicit RealCommandRunner(const BuildConfig& config) : config_(config), subprocs_(config) {}
   virtual ~RealCommandRunner() {}
   virtual bool CanRunMore();
   virtual bool StartCommand(Edge* edge);
@@ -502,7 +502,7 @@ bool RealCommandRunner::CanRunMore() {
 bool RealCommandRunner::StartCommand(Edge* edge) {
   EdgeCommand c;
   edge->EvaluateCommand(&c);
-  Subprocess* subproc = subprocs_.Add(c);
+  Subprocess* subproc = subprocs_.Add(c, edge);
   if (!subproc)
     return false;
   subproc_to_edge_.insert(make_pair(subproc, edge));

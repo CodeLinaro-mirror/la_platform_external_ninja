@@ -15,6 +15,7 @@
 #ifndef NINJA_UTIL_H_
 #define NINJA_UTIL_H_
 
+#include <filesystem>
 #ifdef _WIN32
 #include "win32port.h"
 #else
@@ -28,6 +29,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <filesystem>
+#include <optional>
+
 using namespace std;
 
 #ifdef _MSC_VER
@@ -85,6 +89,32 @@ void GetWin32EscapedString(const string& input, string* result);
 /// on Windows).
 /// Returns -errno and fills in \a err on error.
 int ReadFile(const string& path, string* contents, string* err);
+
+class TempDir {
+public:
+  TempDir(const TempDir&) = delete;
+  TempDir(TempDir&&);
+  TempDir& operator=(const TempDir&) = delete;
+  TempDir& operator=(TempDir&&);
+  ~TempDir();
+
+  // Leak causes the directory to not be cleaned up with TempDir's destructor is called.
+  void leak();
+  // Cleanup immediately deletes the temporary directory. The directory will also be cleaned up
+  // when the destructor is called, but this method allows checking for errors.
+  std::error_code cleanup();
+  // The path to the temporary directory.
+  std::filesystem::path path();
+
+  // Creates a temporary directory in the provided directory. Errors are returned in ec, and
+  // the return value will be an empty optional if there were errors.
+  static std::optional<TempDir> createInDir(std::filesystem::path dir, std::error_code& ec);
+private:
+  TempDir(std::filesystem::path p): path_(p) {};
+
+  std::filesystem::path path_;
+  bool valid_ = true;
+};
 
 #ifndef _WIN32
 class Mapping {

@@ -29,8 +29,8 @@ cc_defaults {
     target: {
         linux_glibc: {
             cflags: ["-DUSE_PPOLL"],
-        }
-    }
+        },
+    },
 }
 
 genrule {
@@ -76,6 +76,10 @@ cc_library_host_static {
         "src/version.cc",
         "src/browse.cc",
         "src/subprocess-posix.cc",
+    ],
+    whole_static_libs: [
+        "nsjail_config_proto_cc",
+        "libprotobuf-cpp-full",
     ],
 }
 

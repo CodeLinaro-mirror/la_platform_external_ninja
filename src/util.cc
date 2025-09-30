@@ -13,6 +13,10 @@
 // limitations under the License.
 
 #include "util.h"
+#include <exception>
+#include <filesystem>
+#include <optional>
+#include <system_error>
 
 #ifdef __CYGWIN__
 #include <windows.h>
@@ -41,6 +45,7 @@
 
 #include <atomic>
 #include <vector>
+#include <random>
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
 #include <sys/sysctl.h>
@@ -394,6 +399,83 @@ int ReadFile(const string& path, string* contents, string* err) {
   return 0;
 #endif
 }
+
+std::string generateRandomString(int length) {
+    const std::string CHARACTERS = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+    std::random_device rd;
+    std::mt19937 generator(rd());
+    std::uniform_int_distribution<> distribution(0, CHARACTERS.size() - 1);
+
+    std::string randomString;
+    randomString.reserve(length);
+
+    for (int i = 0; i < length; ++i) {
+        randomString += CHARACTERS[distribution(generator)];
+    }
+
+    return randomString;
+}
+
+TempDir::TempDir(TempDir&& t) {
+  cleanup();
+  path_ = std::move(t.path_);
+  valid_ = t.valid_;
+  t.valid_ = false;
+}
+
+TempDir& TempDir::operator=(TempDir&& t) {
+  cleanup();
+  path_ = std::move(t.path_);
+  valid_ = t.valid_;
+  t.valid_ = false;
+  return *this;
+}
+
+TempDir::~TempDir() {
+  cleanup();
+}
+
+void TempDir::leak() {
+  valid_ = false;
+}
+
+std::error_code TempDir::cleanup() {
+  if (!valid_) {
+    return std::error_code();
+  }
+
+  std::error_code ec;
+  std::filesystem::remove_all(path_, ec);
+  path_ = std::filesystem::path();
+  valid_ = false;
+  return ec;
+}
+
+std::filesystem::path TempDir::path() {
+  return path_;
+}
+
+std::optional<TempDir> TempDir::createInDir(std::filesystem::path p, std::error_code& ec) {
+  if (p.empty()) {
+    ec = std::error_code(1, std::generic_category());
+    return std::nullopt;
+  }
+  auto name = generateRandomString(10);
+  std::filesystem::path result = p / name;
+
+  while (std::filesystem::exists(result)) {
+    name = generateRandomString(10);
+    result = p / name;
+  }
+
+  if (std::filesystem::create_directory(result, ec)) {
+    return std::make_optional(TempDir(result));
+  }
+
+  return std::nullopt;
+}
+
 
 #ifndef _WIN32
 void Mapping::unmap() {

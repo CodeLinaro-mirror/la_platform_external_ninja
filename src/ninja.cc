@@ -33,6 +33,7 @@
 #include <deque>
 #include <unordered_map>
 #include <unordered_set>
+#include <filesystem>
 
 #include "browse.h"
 #include "build.h"
@@ -1356,6 +1357,18 @@ bool OptionEnable(const string& name, Options* options, BuildConfig* config) {
   } else if (name == "usesninjalogasweightlist=no") {
     config->ninja_log_as_weight_list = false;
     return true;
+  } else if (name.rfind("nsjail=", 0) == 0) {
+    config->nsjail_path = std::filesystem::absolute(name.substr(7)).generic_string();
+    return true;
+  } else if (name.rfind("nsjail_workdir=", 0) == 0) {
+    config->nsjail_workdir = name.substr(15);
+
+    // Enforce trailing slash for easier comparison against other strings later
+    if (!config->nsjail_workdir.empty() && config->nsjail_workdir[0] != '/') {
+      config->nsjail_workdir = config->cwd / config->nsjail_workdir;
+    }
+
+    return true;
   } else {
     const char* suggestion =
         SpellcheckString(name.c_str(),
@@ -1673,6 +1686,7 @@ NORETURN void real_main(int argc, char** argv) {
   // Use exit() instead of return in this function to avoid potentially
   // expensive cleanup when destructing NinjaMain.
   BuildConfig config;
+  config.cwd = std::filesystem::current_path();
   Options options = {};
   options.input_file = "build.ninja";
   options.dupe_edges_should_err = true;
@@ -1748,6 +1762,12 @@ NORETURN void real_main(int argc, char** argv) {
 
     if (!ninja.EnsureBuildDirExists())
       exit(1);
+
+    config.build_dir = ninja.build_dir_;
+    // Enforce trailing slash for easier comparison against other strings later
+    if (!config.build_dir.empty() && config.build_dir[config.build_dir.size() - 1] != '/') {
+      config.build_dir.push_back('/');
+    }
 
     if (!ninja.OpenBuildLog() || !ninja.OpenDepsLog())
       exit(1);
