@@ -30,6 +30,12 @@ cc_defaults {
         linux_glibc: {
             cflags: ["-DUSE_PPOLL"],
         },
+        darwin: {
+            host_ldlibs: [
+                // protobuf requires this
+                "-framework CoreFoundation",
+            ],
+        },
     },
 }
 
