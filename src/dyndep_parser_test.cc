@@ -21,11 +21,16 @@
 #include "graph.h"
 #include "state.h"
 #include "test.h"
+#include "build.h"
+
+BuildConfig defaultConfig;
 
 struct DyndepParserTest : public testing::Test {
+  DyndepParserTest() : state_(defaultConfig) {}
+
   void AssertVfsParse(const char* input,
                       ManifestParserOptions opts = ManifestParserOptions()) {
-    ManifestParser parser(&state_, &fs_, opts);
+    ManifestParser parser(defaultConfig, &state_, &fs_, opts);
     string err;
     bool result;
     EXPECT_TRUE(result = parser.ParseTest(input, &err));

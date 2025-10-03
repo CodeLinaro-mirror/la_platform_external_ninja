@@ -15,11 +15,14 @@
 #include "graph.h"
 #include "state.h"
 #include "test.h"
+#include "build.h"
 
 namespace {
 
+BuildConfig defaultConfig;
+
 TEST(State, Basic) {
-  State state;
+  State state(defaultConfig);
 
   Rule* rule = new Rule("cat");
   rule->bindings_.emplace_back("command", "cat $in > $out\n");

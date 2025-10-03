@@ -32,6 +32,7 @@
 #include "graph.h"
 #include "manifest_parser.h"
 #include "util.h"
+#include "build.h"
 
 namespace {
 
@@ -78,9 +79,13 @@ string GetSystemTempDir() {
 #endif
 }
 
+BuildConfig defaultConfig;
+
 }  // anonymous namespace
 
-StateTestWithBuiltinRules::StateTestWithBuiltinRules() {
+
+
+StateTestWithBuiltinRules::StateTestWithBuiltinRules() : state_(defaultConfig) {
   AddCatRule(&state_);
 }
 
@@ -97,7 +102,7 @@ Node* StateTestWithBuiltinRules::GetNode(const string& path) {
 
 void AssertParse(State* state, const char* input,
                  ManifestParserOptions opts) {
-  ManifestParser parser(state, NULL, opts);
+  ManifestParser parser(defaultConfig, state, NULL, opts);
   string err;
   EXPECT_TRUE(parser.ParseTest(input, &err));
   ASSERT_EQ("", err);
@@ -105,7 +110,9 @@ void AssertParse(State* state, const char* input,
 }
 
 void AssertHash(const char* expected, uint64_t actual) {
-  ASSERT_EQ(BuildLog::LogEntry::HashCommand(expected), actual);
+  EdgeCommand cmd;
+  cmd.command = expected;
+  ASSERT_EQ(BuildLog::LogEntry::HashCommand(defaultConfig, cmd), actual);
 }
 
 void VerifyGraph(const State& state) {

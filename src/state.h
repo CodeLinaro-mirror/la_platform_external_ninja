@@ -137,7 +137,7 @@ struct State {
   static Pool kConsolePool;
   static Rule kPhonyRule;
 
-  State();
+  State(const BuildConfig& config);
 
   void AddBuiltinRule(Rule* rule);
   bool AddPool(Pool* pool, Scope* scope);
@@ -205,6 +205,7 @@ struct State {
 private:
   /// Position 0 is used for built-in decls (e.g. pools).
   DeclIndex dfs_location_ = 1;
+  const BuildConfig& config_;
 };
 
 #endif  // NINJA_STATE_H_

@@ -26,6 +26,7 @@ using namespace std;
 #include "timestamp.h"
 #include "util.h"
 
+struct BuildConfig;
 struct BuildLog;
 struct DepfileParserOptions;
 struct DiskInterface;
@@ -355,6 +356,8 @@ private:
 
 /// An edge in the dependency graph; links between Nodes using Rules.
 struct Edge {
+  Edge(const BuildConfig& config) : config_(config) {}
+
   enum VisitMark {
     VisitNone,
     VisitInStack,
@@ -409,7 +412,8 @@ struct Edge {
                         EdgeEval::EscapeKind escape=EdgeEval::kShellEscape);
 
 private:
-  char** cmdEnviron = NULL;
+  const BuildConfig& config_;
+  char** cmdEnviron = nullptr;
   std::string GetBindingImpl(const HashedStrView& key,
                              EdgeEval::EvalPhase phase,
                              EdgeEval::EscapeKind escape);

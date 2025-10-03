@@ -69,7 +69,7 @@ Pool State::kDefaultPool("", 0);
 Pool State::kConsolePool("console", 1);
 Rule State::kPhonyRule("phony");
 
-State::State() {
+State::State(const BuildConfig& config) : config_(config) {
   // Reserve scope position (root, 0) for built-in rules.
   root_scope_.AllocDecls(1);
 
@@ -127,7 +127,7 @@ bool State::AddPool(Pool* pool, Scope* scope) {
 }
 
 Edge* State::AddEdge(const Rule* rule) {
-  Edge* edge = new Edge();
+  Edge* edge = new Edge(config_);
   edge->pos_.base = new BasePosition {{ &root_scope_, 0 }}; // leaked
   edge->onPosResolvedToScope(&root_scope_);
   edge->rule_ = rule;

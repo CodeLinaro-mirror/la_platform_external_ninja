@@ -27,6 +27,7 @@
 namespace manifest_chunk {
 
 class ChunkParser {
+  const BuildConfig& config_;
   const LoadedFile& file_;
   const bool experimentalEnvvar_;
   Lexer lexer_;
@@ -63,11 +64,13 @@ class ChunkParser {
   bool ParseEdge();
 
 public:
-  ChunkParser(const LoadedFile& file,
+  ChunkParser(const BuildConfig& config,
+              const LoadedFile& file,
               StringPiece chunk_content,
               std::vector<ParserItem>* out,
               bool experimentalEnvvar)
-      : file_(file),
+      : config_(config),
+        file_(file),
         experimentalEnvvar_(experimentalEnvvar),
         lexer_(file.filename(), file.content(), chunk_content.data()),
         chunk_end_(chunk_content.data() + chunk_content.size()),
@@ -336,7 +339,7 @@ bool ChunkParser::ParseRule() {
 }
 
 bool ChunkParser::ParseEdge() {
-  Edge* edge = new Edge();
+  Edge* edge = new Edge(config_);
 
   auto parse_path_list = [this, edge](Edge::DeferredPathList::Type type, int& count) -> bool {
     const char* start_pos = lexer_.GetPos();
@@ -466,9 +469,9 @@ bool ChunkParser::ParseChunk() {
   return false;  // not reached
 }
 
-void ParseChunk(const LoadedFile& file, StringPiece chunk_content,
+void ParseChunk(const BuildConfig& config, const LoadedFile& file, StringPiece chunk_content,
                 std::vector<ParserItem>* out, bool experimentalEnvvar) {
-  ChunkParser parser(file, chunk_content, out, experimentalEnvvar);
+  ChunkParser parser(config, file, chunk_content, out, experimentalEnvvar);
   if (!parser.ParseChunk()) {
     assert(!out->empty());
     assert(out->back().kind == ParserItem::kError);

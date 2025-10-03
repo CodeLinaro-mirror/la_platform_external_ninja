@@ -27,6 +27,8 @@ using namespace std;
 
 struct State;
 struct Edge;
+struct EdgeCommand;
+struct BuildConfig;
 
 /// Can answer questions about the manifest for the BuildLog.
 struct BuildLogUser {
@@ -43,7 +45,7 @@ struct BuildLogUser {
 /// 2) timing information, perhaps for generating reports
 /// 3) restat information
 struct BuildLog {
-  BuildLog();
+  BuildLog(const BuildConfig& config);
   ~BuildLog();
 
   bool OpenForWrite(const string& path, const BuildLogUser& user, string* err);
@@ -64,7 +66,7 @@ struct BuildLog {
     // Used during build log parsing.
     std::atomic<size_t> newest_parsed_line;
 
-    static uint64_t HashCommand(StringPiece command);
+    static uint64_t HashCommand(const BuildConfig& config, const EdgeCommand& command);
 
     // Used by tests.
     bool operator==(const LogEntry& o) {
@@ -94,9 +96,10 @@ struct BuildLog {
   const Entries& entries() const { return entries_; }
 
  private:
+  const BuildConfig& config_;
   Entries entries_;
-  FILE* log_file_;
-  bool needs_recompaction_;
+  FILE* log_file_ = nullptr;
+  bool needs_recompaction_ = false;
 };
 
 #endif // NINJA_BUILD_LOG_H_

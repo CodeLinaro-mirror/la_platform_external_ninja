@@ -720,7 +720,7 @@ bool Edge::PrecomputeDepScanInfo(std::string* err) {
   EdgeCommand command;
   if (!EvaluateCommand(&command, /*incl_rsp_file=*/true, err))
     return false;
-  dep_scan_info_.command_hash = BuildLog::LogEntry::HashCommand(command.command);
+  dep_scan_info_.command_hash = BuildLog::LogEntry::HashCommand(config_, command);
 
   dep_scan_info_.valid = true;
   return true;

@@ -16,6 +16,7 @@
 
 #include "util.h"
 #include "test.h"
+#include "build.h"
 
 #include <sys/stat.h>
 #ifdef _WIN32
@@ -41,12 +42,14 @@ struct BuildLogTest : public StateTestWithBuiltinRules, public BuildLogUser {
   virtual bool IsPathDead(GlobalPathStr s) const { return false; }
 };
 
+BuildConfig defaultConfig;
+
 TEST_F(BuildLogTest, WriteRead) {
   AssertParse(&state_,
 "build out: cat mid\n"
 "build mid: cat in\n");
 
-  BuildLog log1;
+  BuildLog log1(defaultConfig);
   string err;
   EXPECT_TRUE(log1.OpenForWrite(kTestFilename, *this, &err));
   ASSERT_EQ("", err);
@@ -54,7 +57,7 @@ TEST_F(BuildLogTest, WriteRead) {
   log1.RecordCommand(state_.edges_[1], 20, 25);
   log1.Close();
 
-  BuildLog log2;
+  BuildLog log2(defaultConfig);
   EXPECT_TRUE(log2.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
 
@@ -75,7 +78,7 @@ TEST_F(BuildLogTest, FirstWriteAddsSignature) {
   const char kExpectedVersion[] = "# ninja log vX\n";
   const size_t kVersionPos = strlen(kExpectedVersion) - 2;  // Points at 'X'.
 
-  BuildLog log;
+  BuildLog log(defaultConfig);
   string contents, err;
 
   EXPECT_TRUE(log.OpenForWrite(kTestFilename, *this, &err));
@@ -109,7 +112,7 @@ TEST_F(BuildLogTest, DoubleEntry) {
   fclose(f);
 
   string err;
-  BuildLog log;
+  BuildLog log(defaultConfig);
   EXPECT_TRUE(log.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
 
@@ -125,7 +128,7 @@ TEST_F(BuildLogTest, Truncate) {
 "build mid: cat in\n");
 
   {
-    BuildLog log1;
+    BuildLog log1(defaultConfig);
     string err;
     EXPECT_TRUE(log1.OpenForWrite(kTestFilename, *this, &err));
     ASSERT_EQ("", err);
@@ -141,7 +144,7 @@ TEST_F(BuildLogTest, Truncate) {
   // For all possible truncations of the input file, assert that we don't
   // crash when parsing.
   for (off_t size = statbuf.st_size; size > 0; --size) {
-    BuildLog log2;
+    BuildLog log2(defaultConfig);
     string err;
     EXPECT_TRUE(log2.OpenForWrite(kTestFilename, *this, &err));
     ASSERT_EQ("", err);
@@ -151,7 +154,7 @@ TEST_F(BuildLogTest, Truncate) {
 
     ASSERT_TRUE(Truncate(kTestFilename, size, &err));
 
-    BuildLog log3;
+    BuildLog log3(defaultConfig);
     err.clear();
     ASSERT_TRUE(log3.Load(kTestFilename, &err) || !err.empty());
   }
@@ -164,7 +167,7 @@ TEST_F(BuildLogTest, ObsoleteOldVersion) {
   fclose(f);
 
   string err;
-  BuildLog log;
+  BuildLog log(defaultConfig);
   EXPECT_TRUE(log.Load(kTestFilename, &err));
   ASSERT_NE(err.find("version"), string::npos);
 }
@@ -185,7 +188,7 @@ TEST_F(BuildLogTest, DuplicateVersionHeader) {
   fclose(f);
 
   string err;
-  BuildLog log;
+  BuildLog log(defaultConfig);
   EXPECT_TRUE(log.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
 
@@ -219,7 +222,7 @@ TEST_F(BuildLogTest, VeryLongInputLine) {
   fclose(f);
 
   string err;
-  BuildLog log;
+  BuildLog log(defaultConfig);
   EXPECT_TRUE(log.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
 
@@ -243,7 +246,7 @@ TEST_F(BuildLogTest, MultiTargetEdge) {
   AssertParse(&state_,
 "build out out.d: cat\n");
 
-  BuildLog log;
+  BuildLog log(defaultConfig);
   log.RecordCommand(state_.edges_[0], 21, 22);
 
   ASSERT_EQ(2u, log.entries().size());
@@ -270,7 +273,7 @@ TEST_F(BuildLogRecompactTest, Recompact) {
 "build out: cat in\n"
 "build out2: cat in\n");
 
-  BuildLog log1;
+  BuildLog log1(defaultConfig);
   string err;
   EXPECT_TRUE(log1.OpenForWrite(kTestFilename, *this, &err));
   ASSERT_EQ("", err);
@@ -282,7 +285,7 @@ TEST_F(BuildLogRecompactTest, Recompact) {
   log1.Close();
 
   // Load...
-  BuildLog log2;
+  BuildLog log2(defaultConfig);
   EXPECT_TRUE(log2.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
   ASSERT_EQ(2u, log2.entries().size());
@@ -293,7 +296,7 @@ TEST_F(BuildLogRecompactTest, Recompact) {
   log2.Close();
 
   // "out2" is dead, it should've been removed.
-  BuildLog log3;
+  BuildLog log3(defaultConfig);
   EXPECT_TRUE(log3.Load(kTestFilename, &err));
   ASSERT_EQ("", err);
   ASSERT_EQ(1u, log3.entries().size());

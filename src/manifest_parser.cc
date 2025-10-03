@@ -48,7 +48,8 @@ static bool DecorateError(const LoadedFile& file, size_t file_offset,
 
 /// Split a single manifest file into chunks, parse the chunks in parallel, and
 /// return the resulting parser output.
-static std::vector<ParserItem> ParseManifestChunks(const LoadedFile& file,
+static std::vector<ParserItem> ParseManifestChunks(const BuildConfig& config,
+                                                   const LoadedFile& file,
                                                    ThreadPool* thread_pool,
                                                    bool experimentalEnvvar) {
   std::vector<ParserItem> result;
@@ -58,9 +59,9 @@ static std::vector<ParserItem> ParseManifestChunks(const LoadedFile& file,
   METRIC_RECORD(".ninja load : parse chunks");
 
   for (std::vector<ParserItem>& chunk_items :
-      ParallelMap(thread_pool, chunk_views, [&file, experimentalEnvvar](StringPiece view) {
+      ParallelMap(thread_pool, chunk_views, [&file, experimentalEnvvar, &config](StringPiece view) {
     std::vector<ParserItem> chunk_items;
-    manifest_chunk::ParseChunk(file, view, &chunk_items, experimentalEnvvar);
+    manifest_chunk::ParseChunk(config, file, view, &chunk_items, experimentalEnvvar);
     return chunk_items;
   })) {
     std::move(chunk_items.begin(), chunk_items.end(),
@@ -143,8 +144,9 @@ std::vector<std::string> ManifestFileSet::GetFileNames() {
 }
 
 struct DfsParser {
-  DfsParser(ManifestFileSet* file_set, State* state, ThreadPool* thread_pool, const ManifestParserOptions& options)
-      : options_(options), file_set_(file_set), state_(state), thread_pool_(thread_pool) {}
+  DfsParser(const BuildConfig& config, ManifestFileSet* file_set, State* state,
+    ThreadPool* thread_pool, const ManifestParserOptions& options)
+      : options_(options), config_(config), file_set_(file_set), state_(state), thread_pool_(thread_pool) {}
 
 private:
   void HandleRequiredVersion(const RequiredVersion& item, Scope* scope);
@@ -166,6 +168,7 @@ public:
                         std::vector<Clump*>* out_clumps, std::string* err);
 
 private:
+  const BuildConfig& config_;
   ManifestFileSet* file_set_;
   State* state_;
   ThreadPool* thread_pool_;
@@ -347,7 +350,7 @@ bool DfsParser::HandleClump(Clump* clump, const LoadedFile& file, Scope* scope,
 bool DfsParser::LoadManifestTree(const LoadedFile& file, Scope* scope,
                                  std::vector<Clump*>* out_clumps,
                                  std::string* err) {
-  std::vector<ParserItem> items = ParseManifestChunks(file, thread_pool_, options_.experimentalEnvvar);
+  std::vector<ParserItem> items = ParseManifestChunks(config_, file, thread_pool_, options_.experimentalEnvvar);
   ReserveSpaceInScopeTables(scope, items);
 
   // With the chunks parsed, do a depth-first parse of the ninja manifest using
@@ -428,6 +431,7 @@ static const HashedStrView kTags { "tags" };
 
 struct ManifestLoader {
 private:
+  const BuildConfig& config_;
   State* const state_ = nullptr;
   ThreadPool* const thread_pool_ = nullptr;
   const ManifestParserOptions options_;
@@ -442,9 +446,9 @@ private:
   bool FinishLoading(const std::vector<Clump*>& clumps, std::string* err);
 
 public:
-  ManifestLoader(State* state, ThreadPool* thread_pool,
+  ManifestLoader(const BuildConfig& config, State* state, ThreadPool* thread_pool,
                  ManifestParserOptions options, bool quiet)
-      : state_(state), thread_pool_(thread_pool), options_(options),
+      : config_(config), state_(state), thread_pool_(thread_pool), options_(options),
         quiet_(quiet) {}
 
   bool Load(ManifestFileSet* file_set, const LoadedFile& root_manifest,
@@ -771,7 +775,7 @@ bool ManifestLoader::FinishLoading(const std::vector<Clump*>& clumps,
 
 bool ManifestLoader::Load(ManifestFileSet* file_set,
                           const LoadedFile& root_manifest, std::string* err) {
-  DfsParser dfs_parser(file_set, state_, thread_pool_, options_);
+  DfsParser dfs_parser(config_, file_set, state_, thread_pool_, options_);
   std::vector<Clump*> clumps;
   if (!dfs_parser.LoadManifestTree(root_manifest, &state_->root_scope_, &clumps,
                                    err)) {
@@ -791,7 +795,7 @@ bool ManifestParser::Load(const string& filename, string* err) {
     return false;
 
   std::unique_ptr<ThreadPool> thread_pool = CreateThreadPool();
-  ManifestLoader loader(state_, thread_pool.get(), options_, false);
+  ManifestLoader loader(config_, state_, thread_pool.get(), options_, false);
   bool result = loader.Load(&file_set, *file, err);
   state_->manifest_files = file_set.GetFileNames();
   return result;
@@ -800,6 +804,6 @@ bool ManifestParser::Load(const string& filename, string* err) {
 bool ManifestParser::ParseTest(const string& input, string* err) {
   ManifestFileSet file_set(file_reader_);
   std::unique_ptr<ThreadPool> thread_pool = CreateThreadPool();
-  ManifestLoader loader(state_, thread_pool.get(), options_, true);
+  ManifestLoader loader(config_, state_, thread_pool.get(), options_, true);
   return loader.Load(&file_set, HeapLoadedFile("input", input), err);
 }

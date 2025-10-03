@@ -22,8 +22,11 @@
 #include "graph.h"
 #include "util.h"
 #include "test.h"
+#include "build.h"
 
 namespace {
+
+BuildConfig defaultConfig;
 
 const char kTestFilename[] = "DepsLogTest-tempfile";
 
@@ -47,7 +50,7 @@ Node* LookupNode(State& state, const string& path) {
 }
 
 TEST_F(DepsLogTest, WriteRead) {
-  State state1;
+  State state1(defaultConfig);
   DepsLog log1;
   string err;
   VirtualFileSystem fs;
@@ -75,7 +78,7 @@ TEST_F(DepsLogTest, WriteRead) {
 
   log1.Close();
 
-  State state2;
+  State state2(defaultConfig);
   DepsLog log2;
   EXPECT_TRUE(log2.Load(kTestFilename, &state2, &err));
   ASSERT_EQ("", err);
@@ -100,7 +103,7 @@ TEST_F(DepsLogTest, WriteRead) {
 TEST_F(DepsLogTest, LotsOfDeps) {
   const int kNumDeps = 100000;  // More than 64k.
 
-  State state1;
+  State state1(defaultConfig);
   DepsLog log1;
   string err;
   VirtualFileSystem fs;
@@ -126,7 +129,7 @@ TEST_F(DepsLogTest, LotsOfDeps) {
 
   log1.Close();
 
-  State state2;
+  State state2(defaultConfig);
   DepsLog log2;
   EXPECT_TRUE(log2.Load(kTestFilename, &state2, &err));
   ASSERT_EQ("", err);
@@ -140,7 +143,7 @@ TEST_F(DepsLogTest, DoubleEntry) {
   // Write some deps to the file and grab its size.
   int file_size;
   {
-    State state;
+    State state(defaultConfig);
     DepsLog log;
     string err;
     VirtualFileSystem fs;
@@ -161,7 +164,7 @@ TEST_F(DepsLogTest, DoubleEntry) {
 
   // Now reload the file, and read the same deps.
   {
-    State state;
+    State state(defaultConfig);
     DepsLog log;
     string err;
     VirtualFileSystem fs;
@@ -195,7 +198,7 @@ TEST_F(DepsLogTest, Recompact) {
   // Write some deps to the file and grab its size.
   int file_size;
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, kManifest));
     DepsLog log;
     string err;
@@ -224,7 +227,7 @@ TEST_F(DepsLogTest, Recompact) {
   // Now reload the file, and add slightly different deps.
   int file_size_2;
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, kManifest));
     DepsLog log;
     string err;
@@ -250,7 +253,7 @@ TEST_F(DepsLogTest, Recompact) {
   // recompact.
   int file_size_3;
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, kManifest));
     DepsLog log;
     string err;
@@ -300,7 +303,7 @@ TEST_F(DepsLogTest, Recompact) {
   // Now reload the file and recompact with an empty manifest. The previous
   // entries should be removed.
   {
-    State state;
+    State state(defaultConfig);
     // Intentionally not parsing kManifest here.
     DepsLog log;
     string err;
@@ -370,7 +373,7 @@ TEST_F(DepsLogTest, InvalidHeader) {
 
     string err;
     DepsLog log;
-    State state;
+    State state(defaultConfig);
     ASSERT_TRUE(log.Load(kTestFilename, &state, &err));
     EXPECT_EQ("bad deps log signature or version; starting over", err);
   }
@@ -380,7 +383,7 @@ TEST_F(DepsLogTest, InvalidHeader) {
 TEST_F(DepsLogTest, Truncated) {
   // Create a file with some entries.
   {
-    State state;
+    State state(defaultConfig);
     DepsLog log;
     string err;
     VirtualFileSystem fs;
@@ -413,7 +416,7 @@ TEST_F(DepsLogTest, Truncated) {
     string err;
     ASSERT_TRUE(Truncate(kTestFilename, size, &err));
 
-    State state;
+    State state(defaultConfig);
     DepsLog log;
     EXPECT_TRUE(log.Load(kTestFilename, &state, &err));
     if (!err.empty()) {
@@ -440,7 +443,7 @@ TEST_F(DepsLogTest, Truncated) {
 TEST_F(DepsLogTest, TruncatedRecovery) {
   // Create a file with some entries.
   {
-    State state;
+    State state(defaultConfig);
     DepsLog log;
     string err;
     VirtualFileSystem fs;
@@ -470,7 +473,7 @@ TEST_F(DepsLogTest, TruncatedRecovery) {
 
   // Load the file again, add an entry.
   {
-    State state;
+    State state(defaultConfig);
     DepsLog log;
     string err;
     EXPECT_TRUE(log.Load(kTestFilename, &state, &err));
@@ -496,7 +499,7 @@ TEST_F(DepsLogTest, TruncatedRecovery) {
   // Load the file a third time to verify appending after a mangled
   // entry doesn't break things.
   {
-    State state;
+    State state(defaultConfig);
     DepsLog log;
     string err;
     EXPECT_TRUE(log.Load(kTestFilename, &state, &err));
@@ -509,7 +512,7 @@ TEST_F(DepsLogTest, TruncatedRecovery) {
 
 template <typename Func>
 static void DoLoadInvalidLogTest(Func&& func) {
-  State state;
+  State state(defaultConfig);
   DepsLog log;
   std::string err;
   ASSERT_TRUE(log.Load(kTestFilename, &state, &err));

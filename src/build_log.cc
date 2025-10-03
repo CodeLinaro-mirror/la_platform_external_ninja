@@ -111,9 +111,17 @@ uint64_t MurmurHash64A(const void* key, size_t len) {
 }  // namespace
 
 // static
-uint64_t BuildLog::LogEntry::HashCommand(StringPiece command) {
+uint64_t BuildLog::LogEntry::HashCommand(const BuildConfig& config, const EdgeCommand& command) {
   METRIC_RECORD("hash command");
-  return MurmurHash64A(command.data(), command.size());
+  std::string to_hash = command.command;
+
+  // Including the sandboxing status in the hash, so that actions are rerun if sandboxing is
+  // enabled/disabled.
+  if (!config.nsjail_path.empty() && command.sandbox != EdgeSandbox::NONE) {
+    to_hash += "__nsjail_sandboxing";
+  }
+
+  return MurmurHash64A(to_hash.data(), to_hash.size());
 }
 
 BuildLog::LogEntry::LogEntry(const HashedStrView& output)
@@ -125,8 +133,7 @@ BuildLog::LogEntry::LogEntry(const HashedStrView& output, uint64_t command_hash,
     start_time(start_time), end_time(end_time), mtime(restat_mtime)
 {}
 
-BuildLog::BuildLog()
-  : log_file_(NULL), needs_recompaction_(false) {}
+BuildLog::BuildLog(const BuildConfig& config) : config_(config) {}
 
 BuildLog::~BuildLog() {
   Close();
@@ -165,7 +172,7 @@ bool BuildLog::RecordCommand(Edge* edge, int start_time, int end_time,
                              TimeStamp mtime) {
   EdgeCommand c;
   edge->EvaluateCommand(&c, true);
-  uint64_t command_hash = LogEntry::HashCommand(c.command);
+  uint64_t command_hash = LogEntry::HashCommand(config_, c);
   for (Node* out : edge->outputs_) {
     HashedStrView path = out->globalPath().h;
     LogEntry* log_entry;

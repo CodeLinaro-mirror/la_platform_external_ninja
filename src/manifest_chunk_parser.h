@@ -107,7 +107,7 @@ struct ParserItem {
 
 /// Parse a chunk of a manifest. If the parser encounters a syntactic error, the
 /// final item will be an error object.
-void ParseChunk(const LoadedFile& file, StringPiece chunk_content,
+void ParseChunk(const BuildConfig& config, const LoadedFile& file, StringPiece chunk_content,
                 std::vector<ParserItem>* out, bool experimentalEnvvar);
 
 /// Split the input into chunks of declarations.

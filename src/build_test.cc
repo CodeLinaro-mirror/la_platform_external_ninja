@@ -22,6 +22,10 @@
 #include "status.h"
 #include "test.h"
 
+namespace {
+  BuildConfig defaultConfig;
+}
+
 struct CompareEdgesByOutput {
   static bool cmp(const Edge* a, const Edge* b) {
     return a->outputs_[0]->path() < b->outputs_[0]->path();
@@ -583,14 +587,16 @@ struct BuildTest : public StateTestWithBuiltinRules, public BuildLogUser {
 void BuildTest::RebuildTarget(const string& target, const char* manifest,
                               const char* log_path, const char* deps_path,
                               State* state) {
-  State local_state, *pstate = &local_state;
+  State local_state(defaultConfig);
+  State* pstate = &local_state;
   if (state)
     pstate = state;
   ASSERT_NO_FATAL_FAILURE(AddCatRule(pstate));
   AssertParse(pstate, manifest);
 
   string err;
-  BuildLog build_log, *pbuild_log = NULL;
+  BuildLog build_log(defaultConfig);
+  BuildLog* pbuild_log = NULL;
   if (log_path) {
     ASSERT_TRUE(build_log.Load(log_path, &err));
     ASSERT_TRUE(build_log.OpenForWrite(log_path, *this, &err));
@@ -1338,7 +1344,7 @@ TEST_F(BuildTest, PoolEdgesReadyButNotWanted) {
 
   fs_.RemoveFile("B.d.stamp");
 
-  State save_state;
+  State save_state(defaultConfig);
   RebuildTarget("final.stamp", manifest, NULL, NULL, &save_state);
   Pool* pool = save_state.LookupPool("some_pool",
                                      save_state.edges_[0]->pos_.scope_pos());
@@ -1347,7 +1353,7 @@ TEST_F(BuildTest, PoolEdgesReadyButNotWanted) {
 }
 
 struct BuildWithLogTest : public BuildTest {
-  BuildWithLogTest() {
+  BuildWithLogTest(): build_log_(defaultConfig) {
     builder_.SetBuildLog(&build_log_);
   }
 
@@ -1978,7 +1984,7 @@ TEST_F(BuildWithDepsLogTest, Straightforward) {
       "  deps = gcc\n"
       "  depfile = in1.d\n";
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
@@ -2004,7 +2010,7 @@ TEST_F(BuildWithDepsLogTest, Straightforward) {
   }
 
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
@@ -2049,7 +2055,7 @@ TEST_F(BuildWithDepsLogTest, ObsoleteDeps) {
     fs_.Create("in1", "");
     fs_.Create("in1.d", "out: ");
 
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
@@ -2079,7 +2085,7 @@ TEST_F(BuildWithDepsLogTest, ObsoleteDeps) {
   EXPECT_EQ(0, fs_.Stat("in1.d", &err));
 
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
@@ -2117,7 +2123,7 @@ TEST_F(BuildWithDepsLogTest, DepsIgnoredInDryRun) {
   fs_.Tick();
   fs_.Create("in1", "");
 
-  State state;
+  State state(defaultConfig);
   ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
   ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
@@ -2172,7 +2178,7 @@ TEST_F(BuildWithDepsLogTest, RestatDepfileDependencyDepsLog) {
       "  deps = gcc\n"
       "  depfile = in1.d\n";
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
@@ -2194,7 +2200,7 @@ TEST_F(BuildWithDepsLogTest, RestatDepfileDependencyDepsLog) {
   }
 
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
@@ -2232,7 +2238,7 @@ TEST_F(BuildWithDepsLogTest, DepFileOKDepsLog) {
   fs_.Create("foo.c", "");
 
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
     // Run the build once, everything should be ok.
@@ -2253,7 +2259,7 @@ TEST_F(BuildWithDepsLogTest, DepFileOKDepsLog) {
   }
 
   {
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
     DepsLog deps_log;
@@ -3660,7 +3666,7 @@ TEST_F(BuildWithDepsLogTest, ValidationThroughDepfile) {
     fs_.Create("in3", "");
     fs_.Create("out2.d", "out: out");
 
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 
@@ -3694,7 +3700,7 @@ TEST_F(BuildWithDepsLogTest, ValidationThroughDepfile) {
     fs_.Create("in2", "");
     fs_.Create("in3", "");
 
-    State state;
+    State state(defaultConfig);
     ASSERT_NO_FATAL_FAILURE(AddCatRule(&state));
     ASSERT_NO_FATAL_FAILURE(AssertParse(&state, manifest));
 

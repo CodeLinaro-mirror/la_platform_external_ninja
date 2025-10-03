@@ -101,7 +101,10 @@ struct Options {
 /// to poke into these, so store them as fields on an object.
 struct NinjaMain : public BuildLogUser {
   NinjaMain(const char* ninja_command, const BuildConfig& config) :
-      ninja_command_(ninja_command), config_(config),
+      ninja_command_(ninja_command),
+      config_(config),
+      state_(config),
+      build_log_(config),
       start_time_millis_(GetTimeMillis()) {}
 
   /// Command line used to run Ninja.
@@ -1750,7 +1753,7 @@ NORETURN void real_main(int argc, char** argv) {
       parser_opts.phony_cycle_action_ = kPhonyCycleActionError;
     }
     parser_opts.experimentalEnvvar = options.experimentalEnvvar;
-    ManifestParser parser(&ninja.state_, &ninja.disk_interface_, parser_opts);
+    ManifestParser parser(config, &ninja.state_, &ninja.disk_interface_, parser_opts);
     string err;
     if (!parser.Load(options.input_file, &err)) {
       status->Error("%s", err.c_str());

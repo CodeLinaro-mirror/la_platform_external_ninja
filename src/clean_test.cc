@@ -17,6 +17,10 @@
 
 #include "test.h"
 
+namespace {
+  BuildConfig defaultConfig;
+}
+
 struct CleanTest : public StateTestWithBuiltinRules {
   VirtualFileSystem fs_;
   BuildConfig config_;
@@ -501,7 +505,7 @@ TEST_F(CleanTest, CleanChdir) {
              "build out4: dd in4\n"
              "build final5: dd out3\n");
 
-  ManifestParser parser(&state_, &fs_, ManifestParserOptions());
+  ManifestParser parser(defaultConfig, &state_, &fs_, ManifestParserOptions());
   string err;
   EXPECT_TRUE(parser.ParseTest(
 "rule phony_out\n"

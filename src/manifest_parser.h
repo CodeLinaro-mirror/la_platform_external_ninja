@@ -17,6 +17,7 @@
 
 #include <string>
 
+struct BuildConfig;
 struct FileReader;
 struct State;
 
@@ -37,9 +38,10 @@ struct ManifestParserOptions {
 };
 
 struct ManifestParser {
-  ManifestParser(State* state, FileReader* file_reader,
+  ManifestParser(const BuildConfig& config, State* state, FileReader* file_reader,
                  ManifestParserOptions options = ManifestParserOptions())
-      : state_(state),
+      : config_(config),
+        state_(state),
         file_reader_(file_reader),
         options_(options) {}
 
@@ -53,6 +55,7 @@ struct ManifestParser {
   bool ParseTest(const std::string& input, std::string* err);
 
 private:
+  const BuildConfig& config_;
   State* state_ = nullptr;
   FileReader* file_reader_ = nullptr;
   ManifestParserOptions options_;
