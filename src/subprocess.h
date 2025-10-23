@@ -62,7 +62,7 @@ struct Subprocess {
 
  private:
   Subprocess(bool use_console);
-  bool Start(struct SubprocessSet* set, const EdgeCommand& cmd, const Edge* edge, int extra_fd);
+  bool Start(struct SubprocessSet* set, const EdgeCommand& cmd, Edge* edge, int extra_fd);
   void OnPipeReady();
 
   std::filesystem::path OutPathToNsjailOutPath(const std::string& out);
@@ -99,7 +99,7 @@ struct SubprocessSet {
   SubprocessSet(const BuildConfig& config);
   ~SubprocessSet();
 
-  Subprocess* Add(const EdgeCommand& cmd, const Edge* edge, int extra_fd = -1);
+  Subprocess* Add(const EdgeCommand& cmd, Edge* edge, int extra_fd = -1);
   bool DoWork();
   Subprocess* NextFinished();
   void Clear();

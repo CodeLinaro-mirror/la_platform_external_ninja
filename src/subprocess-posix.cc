@@ -63,7 +63,7 @@ std::filesystem::path Subprocess::OutPathToNsjailOutPath(const std::string& out)
     return nsjail_workdir_.value().path() / "out" / rel;
 }
 
-bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, const Edge* edge,
+bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
                        int extra_fd) {
   edge_ = edge;
   config_ = &set->config_;
@@ -143,7 +143,8 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, const Edge* e
 
   std::vector<const char*> args;
   std::vector<std::string> buff;
-  if (set->config_.nsjail_path.empty() || cmd.sandbox == EdgeSandbox::NONE || edge == nullptr) {
+  if (set->config_.nsjail_path.empty() || cmd.sandbox == EdgeSandbox::NONE || edge == nullptr ||
+      !edge->GetBinding("sandbox_disabled").empty()) {
     args.push_back("/bin/sh");
     args.push_back("-c");
     args.push_back(cmd.command.c_str());
@@ -427,7 +428,7 @@ SubprocessSet::~SubprocessSet() {
     Fatal("sigprocmask: %s", strerror(errno));
 }
 
-Subprocess *SubprocessSet::Add(const EdgeCommand& cmd, const Edge* edge, int extra_fd) {
+Subprocess *SubprocessSet::Add(const EdgeCommand& cmd, Edge* edge, int extra_fd) {
   Subprocess *subprocess = new Subprocess(cmd.use_console);
   if (!subprocess->Start(this, cmd, edge, extra_fd)) {
     delete subprocess;
