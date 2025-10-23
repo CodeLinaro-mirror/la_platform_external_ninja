@@ -41,7 +41,8 @@ bool Rule::IsReservedBinding(StringPiece var) {
       var == "rspfile" ||
       var == "rspfile_content" ||
       var == "phony_output" ||
-      var == "msvc_deps_prefix";
+      var == "msvc_deps_prefix" ||
+      var == "sandbox_disabled";
 }
 
 void Binding::Evaluate(std::string* out_append) {
