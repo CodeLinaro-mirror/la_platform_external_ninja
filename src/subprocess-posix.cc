@@ -143,8 +143,22 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
 
   std::vector<const char*> args;
   std::vector<std::string> buff;
-  if (set->config_.nsjail_path.empty() || cmd.sandbox == EdgeSandbox::NONE || edge == nullptr ||
-      !edge->GetBinding("sandbox_disabled").empty()) {
+
+  bool use_nsjail = !set->config_.nsjail_path.empty() &&
+                    cmd.sandbox != EdgeSandbox::NONE &&
+                    edge != nullptr &&
+                    edge->GetBinding("sandbox_disabled").empty();
+
+  if (use_nsjail) {
+    for (Node* output : edge->outputs_) {
+      if (output->path().rfind(config_->build_dir, 0) != 0) {
+        use_nsjail = false;
+        break;
+      }
+    }
+  }
+
+  if (!use_nsjail) {
     args.push_back("/bin/sh");
     args.push_back("-c");
     args.push_back(cmd.command.c_str());
