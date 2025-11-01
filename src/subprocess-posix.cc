@@ -255,7 +255,24 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     binMount->set_is_dir(true);
     outMount->set_rw(true);
 
-    for (Node* input : edge->inputs_) {
+    std::vector<Node*> nodes_to_process = edge->inputs_;
+    std::unordered_set<Node*> processed_nodes;
+
+    while (!nodes_to_process.empty()) {
+      Node* input = nodes_to_process.back();
+      nodes_to_process.pop_back();
+
+      if (processed_nodes.count(input))
+        continue;
+      processed_nodes.insert(input);
+
+      if (input->in_edge() && input->in_edge()->is_phony()) {
+        nodes_to_process.insert(nodes_to_process.end(),
+                                input->in_edge()->inputs_.begin(),
+                                input->in_edge()->inputs_.end());
+        continue;
+      }
+
       auto input_path = set->config_.cwd / input->path();
       // input_path_in_sandbox is always rooted at /src, unless the path from the ninja file was
       // an absolute path (like when setting OUT_DIR to an absolute path).
