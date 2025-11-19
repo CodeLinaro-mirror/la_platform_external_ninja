@@ -201,12 +201,19 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     lib64Mount->set_src("/lib64");
     lib64Mount->set_dst("/lib64");
     lib64Mount->set_is_bind(true);
-    binMount->set_is_dir(true);
+    lib64Mount->set_is_dir(true);
     auto usrMount = nsjailConfig.add_mount();
     usrMount->set_src("/usr");
     usrMount->set_dst("/usr");
     usrMount->set_is_bind(true);
-    binMount->set_is_dir(true);
+    usrMount->set_is_dir(true);
+    auto devMount = nsjailConfig.add_mount();
+    devMount->set_src("/dev");
+    devMount->set_dst("/dev");
+    devMount->set_is_bind(true);
+    devMount->set_is_dir(true);
+
+    nsjailConfig.set_mount_proc(true);
 
 
     // Add a tmp directory. Using a directory in the working directory instead of a tmpfs mount
@@ -217,7 +224,7 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     tmpMount->set_src(temp_dir.generic_string());
     tmpMount->set_dst("/tmp");
     tmpMount->set_is_bind(true);
-    binMount->set_is_dir(true);
+    tmpMount->set_is_dir(true);
     tmpMount->set_rw(true);
 
     // Add the source directory. Normally this is not necessary, because the -R flags for the
@@ -229,7 +236,7 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     auto srcMount = nsjailConfig.add_mount();
     srcMount->set_src(src_dir.generic_string());
     srcMount->set_dst("/src");
-    binMount->set_is_dir(true);
+    srcMount->set_is_dir(true);
     srcMount->set_is_bind(true);
 
 
@@ -252,7 +259,7 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     outMount->set_src(absolute_out_dir.generic_string());
     outMount->set_dst(absolute_out_dir_in_sandbox);
     outMount->set_is_bind(true);
-    binMount->set_is_dir(true);
+    outMount->set_is_dir(true);
     outMount->set_rw(true);
 
     std::vector<Node*> nodes_to_process = edge->inputs_;
