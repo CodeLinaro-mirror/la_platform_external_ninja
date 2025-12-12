@@ -553,7 +553,8 @@ void ToolInputsProcessNodeDeps(
   // Print all of this node's deps from the deps log. This often includes files
   // that are not known by the node's input edge.
   if (deps_log->IsDepsEntryLiveFor(node)) {
-    DepsLog::Deps* deps = deps_log->GetDeps(node); if (deps != nullptr) {
+    DepsLog::Deps* deps = deps_log->GetDeps(node);
+    if (deps != nullptr) {
       for (int i = 0; i < deps->node_count; ++i) {
         Node* dep = deps->nodes[i]; if (dep != nullptr) {
           ToolInputsProcessNode(dep, deps_log, leaf_only, include_deps,
@@ -572,12 +573,16 @@ int NinjaMain::ToolInputs(const Options* options, int argc, char* argv[]) {
 
   bool leaf_only = true;
   bool include_deps = false;
+  bool all = false;
   std::unordered_set<std::string> excluded_paths;
 
   optind = 1;
   int opt;
-  while ((opt = getopt(argc, argv, "idhe:")) != -1) {
+  while ((opt = getopt(argc, argv, "aidhe:")) != -1) {
     switch (opt) {
+      case 'a':
+        all = true;
+        break;
       case 'i':
         leaf_only = false;
         break;
@@ -592,6 +597,7 @@ int NinjaMain::ToolInputs(const Options* options, int argc, char* argv[]) {
         printf(
             "usage: ninja -t inputs [options] target [target...]\n\n"
             "options:\n"
+            "  -a      : Include all targets, not just the ones listed on the command line / the defaults.\n"
             "  -i      : Include intermediate inputs.\n"
             "  -d      : Include deps from the deps log file (.ninja_deps).\n"
             "  -e path : Ignore dependency paths that include the given path.\n");
@@ -603,7 +609,17 @@ int NinjaMain::ToolInputs(const Options* options, int argc, char* argv[]) {
 
   vector<Node*> nodes;
   string err;
-  if (!CollectTargetsFromArgs(argc, argv, &nodes, &err)) {
+  if (all) {
+    if (argc != 0) {
+      Error("Cannot supply any targets when using -a");
+      return 1;
+    }
+    nodes = state_.RootNodes(&err);
+    if (!err.empty()) {
+      Error("%s", err.c_str());
+      return 1;
+    }
+  } else if (!CollectTargetsFromArgs(argc, argv, &nodes, &err)) {
     Error("%s", err.c_str());
     return 1;
   }
@@ -612,7 +628,8 @@ int NinjaMain::ToolInputs(const Options* options, int argc, char* argv[]) {
     node->MarkInputsChecked();
     // Call ToolInputsProcessNode on this node's inputs, and not on itself,
     // so that this node is not included in the output.
-    Edge* edge = node->in_edge(); if (edge != nullptr) {
+    Edge* edge = node->in_edge();
+    if (edge != nullptr) {
       for (Node* input : edge->inputs_) {
         ToolInputsProcessNode(input, &deps_log_, leaf_only, include_deps,
                               excluded_paths);
