@@ -262,6 +262,17 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     outMount->set_is_dir(true);
     outMount->set_rw(true);
 
+    // Mount the rsp file, if there is any.
+    string rspFile = edge->GetUnescapedRspfile();
+    if (!rspFile.empty()) {
+      auto rspMount = nsjailConfig.add_mount();
+      auto rspFilePath = std::filesystem::path(rspFile);
+      rspMount->set_src((set->config_.cwd / rspFilePath).generic_string());
+      rspMount->set_dst((std::filesystem::path("/src") / rspFilePath).generic_string());
+      rspMount->set_is_bind(true);
+      rspMount->set_is_dir(false);
+    }
+
     std::vector<Node*> nodes_to_process = edge->inputs_;
     std::unordered_set<Node*> processed_nodes;
 
