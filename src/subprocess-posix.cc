@@ -276,6 +276,17 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     std::vector<Node*> nodes_to_process = edge->inputs_;
     std::unordered_set<Node*> processed_nodes;
 
+    auto produced_by_phony = [](Node* node) {
+      Edge* edge = node->in_edge();
+      if (!edge) return false;
+      if (!edge->is_phony()) return false;
+      // When source file deps are loaded from a depfile, ninja creates phony input edges for them
+      // for implementation detail reasons. Ignore these. (See CreatePhonyInEdge()). Note that
+      // depfiles shouldn't be used with sandboxed actions anyways, and could cause a command to
+      // succeed on an incremental build but fail on a clean build.
+      return !edge->phony_from_depfile_;
+    };
+
     while (!nodes_to_process.empty()) {
       Node* input = nodes_to_process.back();
       nodes_to_process.pop_back();
@@ -284,7 +295,7 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
         continue;
       processed_nodes.insert(input);
 
-      if (input->in_edge() && input->in_edge()->is_phony()) {
+      if (produced_by_phony(input)) {
         nodes_to_process.insert(nodes_to_process.end(),
                                 input->in_edge()->inputs_.begin(),
                                 input->in_edge()->inputs_.end());
