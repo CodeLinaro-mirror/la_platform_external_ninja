@@ -368,8 +368,14 @@ void StatusSerializer::BuildEdgeStarted(Edge* edge, int64_t start_time_millis) {
     }
   }
 
-  const auto& proirity_suffix = config_.weight_list_path ? (" (priority: " + std::to_string(edge->priority()) + ")") : "";
-  edge_started->set_desc(edge->GetBinding("description") + proirity_suffix);
+  std::string desc = edge->GetBinding("description");
+  // Only add the priority suffix if the description isn't already empty.
+  // Empty descriptions mean something special to soong (it will display the command instead),
+  // so we don't want to indiscriminantly make all descriptions non-empty.
+  if (!desc.empty() && config_.weight_list_path) {
+    desc += " (priority: " + std::to_string(edge->priority()) + ")";
+  }
+  edge_started->set_desc(desc);
 
   edge_started->set_command(edge->GetBinding("command"));
 
