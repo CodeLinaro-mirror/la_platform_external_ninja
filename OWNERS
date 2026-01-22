@@ -1,2 +1,1 @@
-rprichard@google.com
-danalbert@google.com
+include toolchain/llvm_android:main:/OWNERS
