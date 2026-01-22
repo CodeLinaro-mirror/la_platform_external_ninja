@@ -14,67 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import enum
 import os
 from pathlib import Path
-import shlex
 import shutil
-import subprocess
 import sys
 from typing import List, Union
-import zipfile
-
 
 NINJA_SRC = Path(__file__).parent.parent
 TOP = NINJA_SRC.parent.parent
 
-
-@enum.unique
-class Host(enum.Enum):
-    """Enumeration of supported hosts."""
-    Darwin = 'darwin'
-    Linux = 'linux'
-    Windows = 'windows'
-
-
-def get_default_host() -> Host:
-    """Returns the Host matching the current machine."""
-    if sys.platform.startswith('linux'):
-        return Host.Linux
-    if sys.platform.startswith('darwin'):
-        return Host.Darwin
-    if sys.platform.startswith('win'):
-        return Host.Windows
-    raise RuntimeError(f'Unsupported host: {sys.platform}')
-
-
-
-def create_new_dir(path: Path) -> None:
-    if path.exists():
-        shutil.rmtree(path)
-    path.mkdir(parents=True)
-
-
-def run_cmd(args: List[Union[str, Path]], cwd: Path = None) -> None:
-    if cwd is not None:
-        print(f'cd {cwd}')
-    str_args = [str(arg) for arg in args]
-    if get_default_host() == Host.Windows:
-        print(subprocess.list2cmdline(str_args))
-    else:
-        print(' '.join([shlex.quote(arg) for arg in str_args]))
-    sys.stdout.flush()
-    subprocess.run(str_args, cwd=cwd, check=True)
-
-
-def zip_dir(root: Path, out_file: Path) -> None:
-    """Zip a folder with archive paths relative to the root"""
-    with zipfile.ZipFile(out_file, 'w', zipfile.ZIP_DEFLATED) as zip_obj:
-        for parent, _, files in os.walk(root):
-            for file in files:
-                install_file = Path(parent) / file
-                rel_file = install_file.relative_to(root)
-                zip_obj.write(install_file, rel_file)
+sys.path.append(str(TOP / 'toolchain/ndk-kokoro'))
+from build_utils import Host, get_default_host, create_new_dir, run_cmd, zip_dir
 
 
 def main() -> None:
