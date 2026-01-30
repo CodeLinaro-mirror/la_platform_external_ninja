@@ -109,7 +109,8 @@ def main() -> None:
     # The ninja tests complete in just a few seconds, so run them during the build. Wait until the
     # end so we can collect artifacts if a test fails.
     env = os.environ.copy()
-    env['LD_LIBRARY_PATH'] = out / 'install'
+    if host == Host.LinuxArm64:
+        env['LD_LIBRARY_PATH'] = out / 'install'
     run_cmd([out / f'build/Release/ninja_test{exe}'], cwd=out / 'build', env=env)
 
 
