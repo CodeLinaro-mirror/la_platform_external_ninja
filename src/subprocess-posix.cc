@@ -185,6 +185,12 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     // TODO: Better environment variable sandboxing
     nsjailConfig.set_keep_env(true);
 
+    // Soong sets TMPDIR=/path/to/source/root/out/soong/.temp,
+    // and /path/to/source/root won't exist in the jail.
+    // Since we create a dedicated tmp directory for this action
+    // and mount it at /tmp, change TMPDIR to match.
+    nsjailConfig.add_envar("TMPDIR=/tmp");
+
     // TODO: Make the globally included directories like this customizable, and eventually phase
     // them out.
     auto binMount = nsjailConfig.add_mount();
