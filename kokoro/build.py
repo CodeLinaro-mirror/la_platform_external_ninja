@@ -98,8 +98,9 @@ def main() -> None:
 
     if host == Host.LinuxArm64:
         shutil.copy2(LinuxArm64Musl.LIBC_MUSL, out / 'install/libc_musl.so')
+        create_new_dir(out / 'install' / 'musl')
         for notice in LinuxArm64Musl.LIBC_MUSL_NOTICES:
-            shutil.copy2(notice, out / 'install' / notice.name)
+            shutil.copy2(notice, out / 'install' / 'musl' / notice.name)
 
     build_id = os.getenv('KOKORO_BUILD_ID', 'dev')
     zip_dir(out / 'install', out / f'artifact/ninja-{host.value}-{build_id}.zip')
