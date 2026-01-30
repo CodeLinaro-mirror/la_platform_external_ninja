@@ -24,7 +24,7 @@ NINJA_SRC = Path(__file__).parent.parent
 TOP = NINJA_SRC.parent.parent
 
 sys.path.append(str(TOP / 'toolchain/ndk-kokoro'))
-from build_utils import Host, get_default_host, create_new_dir, run_cmd, zip_dir
+from build_utils import Host, get_default_host, create_new_dir, run_cmd, zip_dir, LinuxArm64Musl
 
 
 def main() -> None:
@@ -36,8 +36,8 @@ def main() -> None:
     create_new_dir(out / 'build')
     create_new_dir(out / 'artifact')
 
-    prebuilt_cmake = TOP / f'prebuilts/cmake/{host.value}-x86/bin/cmake{exe}'
-    prebuilt_ninja = TOP / f'prebuilts/ninja/{host.value}-x86/ninja{exe}'
+    prebuilt_cmake = TOP / f'prebuilts/cmake/{host.value}/bin/cmake{exe}'
+    prebuilt_ninja = TOP / f'prebuilts/ninja/{host.value}/ninja{exe}'
 
     cmake_conf_args: List[Union[str, Path]] = [
         prebuilt_cmake,
@@ -66,11 +66,22 @@ def main() -> None:
                 f'-DCMAKE_EXE_LINKER_FLAGS={ldflags}',
                 f'-DCMAKE_SHARED_LINKER_FLAGS={ldflags}',
             ]
+        elif host == Host.LinuxArm64:
+            ldflags = LinuxArm64Musl.LDFLAGS + ' -static-libstdc++'
+            cflags = LinuxArm64Musl.CFLAGS
+            cmake_conf_args += [
+                f'-DCMAKE_CXX_COMPILER={LinuxArm64Musl.CXX}',
+                f'-DCMAKE_C_COMPILER={LinuxArm64Musl.CC}',
+                f'-DCMAKE_EXE_LINKER_FLAGS={ldflags}',
+                f'-DCMAKE_SHARED_LINKER_FLAGS={ldflags}',
+                f'-DCMAKE_CXX_FLAGS={cflags}',
+            ]
         elif host == Host.Darwin:
             cmake_conf_args += [
                 '-DCMAKE_OSX_DEPLOYMENT_TARGET=10.9',
                 '-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64',
             ]
+
 
     run_cmd(cmake_conf_args)
     run_cmd(cmake_build_args)
@@ -85,6 +96,11 @@ def main() -> None:
     # git, which produces a Cygwin symlink that non-Cygwin Python treats as a small binary file.
     shutil.copy2(NINJA_SRC / 'COPYING', out / 'install/LICENSE')
 
+    if host == Host.LinuxArm64:
+        shutil.copy2(LinuxArm64Musl.LIBC_MUSL, out / 'install/libc_musl.so')
+        for notice in LinuxArm64Musl.LIBC_MUSL_NOTICES:
+            shutil.copy2(notice, out / 'install' / notice.name)
+
     build_id = os.getenv('KOKORO_BUILD_ID', 'dev')
     zip_dir(out / 'install', out / f'artifact/ninja-{host.value}-{build_id}.zip')
     run_cmd([sys.executable, TOP / 'toolchain/ndk-kokoro/gen_manifest.py',
@@ -92,7 +108,9 @@ def main() -> None:
 
     # The ninja tests complete in just a few seconds, so run them during the build. Wait until the
     # end so we can collect artifacts if a test fails.
-    run_cmd([out / f'build/Release/ninja_test{exe}'], cwd=out / 'build')
+    env = os.environ.copy()
+    env['LD_LIBRARY_PATH'] = out / 'install'
+    run_cmd([out / f'build/Release/ninja_test{exe}'], cwd=out / 'build', env=env)
 
 
 if __name__ == '__main__':
