@@ -1,1 +1,2 @@
 include toolchain/llvm_android:main:/OWNERS
+include platform/system/core:main:/janitors/OWNERS #{LAST_RESORT_SUGGESTION}
