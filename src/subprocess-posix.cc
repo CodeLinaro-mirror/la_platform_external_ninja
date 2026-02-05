@@ -180,6 +180,7 @@ bool Subprocess::Start(SubprocessSet* set, const EdgeCommand& cmd, Edge* edge,
     // equivalent to -q, for quiet execution
     nsjailConfig.set_log_level(nsjail::WARNING);
     nsjailConfig.set_disable_rl(true);
+    nsjailConfig.set_time_limit(0);
     nsjailConfig.set_cwd("/src");
 
     // TODO: Better environment variable sandboxing
