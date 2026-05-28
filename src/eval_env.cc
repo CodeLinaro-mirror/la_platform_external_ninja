@@ -45,7 +45,7 @@ bool Rule::IsReservedBinding(StringPiece var) {
       var == "sandbox_disabled" ||
       // These bindings are used by siso
       var == "remote_enabled" ||
-      var == "remote_platform" ||
+      var == "remote_platform_ref" ||
       var == "remote_timeout";
 }
 
