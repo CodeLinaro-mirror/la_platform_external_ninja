@@ -42,7 +42,11 @@ bool Rule::IsReservedBinding(StringPiece var) {
       var == "rspfile_content" ||
       var == "phony_output" ||
       var == "msvc_deps_prefix" ||
-      var == "sandbox_disabled";
+      var == "sandbox_disabled" ||
+      // These bindings are used by siso
+      var == "remote_enabled" ||
+      var == "remote_platform" ||
+      var == "remote_timeout";
 }
 
 void Binding::Evaluate(std::string* out_append) {
