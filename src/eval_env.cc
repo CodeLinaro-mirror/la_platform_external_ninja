@@ -46,7 +46,11 @@ bool Rule::IsReservedBinding(StringPiece var) {
       // These bindings are used by siso
       var == "remote_enabled" ||
       var == "remote_platform_ref" ||
-      var == "remote_timeout";
+      var == "remote_timeout" ||
+      // Source is sometimes used by soong to track several rules that
+      // should be treated as the same rule / coming from the same source,
+      // like RuleBuilder rules. Only for metrics, has no effect on ninja.
+      var == "source";
 }
 
 void Binding::Evaluate(std::string* out_append) {
