@@ -98,6 +98,7 @@ def main() -> None:
 
     if host == Host.LinuxArm64:
         shutil.copy2(LinuxArm64Musl.LIBC_MUSL, out / 'install/libc_musl.so')
+        shutil.copy2(LinuxArm64Musl.LIBJEMALLOC, out / 'install/libjemalloc5.so')
         create_new_dir(out / 'install' / 'musl')
         for notice in LinuxArm64Musl.LIBC_MUSL_NOTICES:
             shutil.copy2(notice, out / 'install' / 'musl' / notice.name)
