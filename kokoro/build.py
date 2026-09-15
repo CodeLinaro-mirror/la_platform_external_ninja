@@ -67,7 +67,7 @@ def main() -> None:
                 f'-DCMAKE_SHARED_LINKER_FLAGS={ldflags}',
             ]
         elif host == Host.LinuxArm64:
-            ldflags = LinuxArm64Musl.LDFLAGS + ' -static-libstdc++'
+            ldflags = LinuxArm64Musl.LDFLAGS + ' -static-libstdc++ -Wl,-rpath=${ORIGIN}'
             cflags = LinuxArm64Musl.CFLAGS
             cmake_conf_args += [
                 f'-DCMAKE_CXX_COMPILER={LinuxArm64Musl.CXX}',
