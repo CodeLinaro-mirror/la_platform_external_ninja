@@ -47,6 +47,7 @@ bool Rule::IsReservedBinding(StringPiece var) {
       var == "remote_enabled" ||
       var == "remote_platform_ref" ||
       var == "remote_timeout" ||
+      var == "restat_content" ||
       // Source is sometimes used by soong to track several rules that
       // should be treated as the same rule / coming from the same source,
       // like RuleBuilder rules. Only for metrics, has no effect on ninja.
