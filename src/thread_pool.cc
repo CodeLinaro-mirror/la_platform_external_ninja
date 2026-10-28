@@ -183,6 +183,10 @@ void SetThreadPoolThreadCount(int num_threads) {
   g_num_threads = std::max(num_threads, 1);
 }
 
+int GetThreadPoolThreadCount() {
+  return g_num_threads;
+}
+
 int GetOptimalThreadPoolJobCount() {
   if (g_num_threads > 1) {
     // Magic constant: when splitting work into tasks for the thread pool, try

@@ -33,6 +33,9 @@ struct ThreadPool {
 /// or lower disables thread creation.
 void SetThreadPoolThreadCount(int num_threads);
 
+/// Get the configured number of worker threads for a thread pool.
+int GetThreadPoolThreadCount();
+
 /// Get the optimal number of jobs to split work into, given the size of the
 /// thread pool.
 int GetOptimalThreadPoolJobCount();
