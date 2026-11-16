@@ -1,1 +1,3 @@
 include platform/build/soong:/OWNERS
+
+include platform/system/core:main:/janitors/OWNERS #{LAST_RESORT_SUGGESTION}
